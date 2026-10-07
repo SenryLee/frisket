@@ -91,6 +91,16 @@ export async function openMarkdownAt(handle: EditorHandle | null, path: string):
   return openAt(handle, path)
 }
 
+/** Finder 双击或「打开方式」交来的一篇或多篇。打不开或用户取消时停下来。 */
+export async function openFromFinder(handle: EditorHandle | null, paths: readonly string[]): Promise<void> {
+  if (handle === null) return
+  for (const path of paths) {
+    const error = await openMarkdownAt(handle, path)
+    if (error) return
+    if (!samePath(docs.activePath, path)) return
+  }
+}
+
 export async function openFromHistory(handle: EditorHandle | null, id: string): Promise<string | null> {
   if (handle === null) return '编辑器还没准备好'
   const item = docs.list.find((entry) => entry.id === id)

@@ -5,6 +5,7 @@
 mod ai;
 mod files;
 mod glass;
+mod open_files;
 
 use ai::{ai_cancel, ai_chat, ai_list_models, settings_get, settings_set};
 use files::{
@@ -13,14 +14,17 @@ use files::{
     doc_write, wallpaper_pick,
 };
 use glass::GlassMode;
+use open_files::OpenedFiles;
 use tauri::{Emitter, Manager};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let app = tauri::Builder::default()
+        .manage(OpenedFiles::default())
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             glass_probe,
+            doc_take_opens,
             doc_pick_open,
             doc_pick_save,
             doc_pick_folder,
@@ -42,6 +46,8 @@ pub fn run() {
         ])
         .setup(|app| {
             migrate_legacy_data(app.handle());
+            open_files::claim_markdown_handler(app.handle());
+            open_files::capture_arguments(app.handle());
             let mode = glass::probe_and_apply(app.handle());
             eprintln!("[frisket] glass mode: {mode:?}");
             if let Some(window) = app.get_webview_window("main") {
@@ -49,8 +55,14 @@ pub fn run() {
             }
             Ok(())
         })
-        .run(tauri::generate_context!())
+        .build(tauri::generate_context!())
         .expect("启动 Frisket 失败");
+
+    app.run(|app, event| {
+        if let tauri::RunEvent::Opened { urls } = event {
+            open_files::capture_urls(app, &urls);
+        }
+    });
 }
 
 /// 标识从 com.slate.md 改成 com.frisket.md 之后，应用数据目录会换地方。
@@ -92,4 +104,10 @@ fn migrate_legacy_data(app: &tauri::AppHandle) {
 #[tauri::command]
 fn glass_probe() -> GlassMode {
     glass::current()
+}
+
+/// 取走 Finder 交来、前端还没打开的 Markdown 路径。
+#[tauri::command]
+fn doc_take_opens(opened: tauri::State<'_, OpenedFiles>) -> Vec<String> {
+    opened.take()
 }

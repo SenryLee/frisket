@@ -12,13 +12,13 @@
   &nbsp;·&nbsp;
   <a href="#try-it">Try it</a>
   &nbsp;·&nbsp;
-  <a href="https://github.com/SenryLee/frisket/releases/tag/v1.1.0">Release</a>
+  <a href="https://github.com/SenryLee/frisket/releases/tag/v1.1.1">Release</a>
 </p>
 
 <p align="center">
   <img alt="macOS 13 or later" src="https://img.shields.io/badge/macOS-13%2B-D97757">
   <img alt="Apple silicon" src="https://img.shields.io/badge/Apple_Silicon-arm64-1A1816">
-  <img alt="Version 1.1.0" src="https://img.shields.io/badge/release-v1.1.0-D97757">
+  <img alt="Version 1.1.1" src="https://img.shields.io/badge/release-v1.1.1-D97757">
   <img alt="MIT" src="https://img.shields.io/badge/license-MIT-8C847C">
 </p>
 
@@ -29,16 +29,15 @@
 This build is for a Mac with **Apple silicon**, on **macOS 13** or later. The disk image is not signed by Apple, so the first open needs a manual allow.
 
 <p align="center">
-  <a href="https://github.com/SenryLee/frisket/releases/download/v1.1.0/Frisket_1.1.0_aarch64.dmg"><strong>Download Frisket 1.1.0</strong></a>
+  <a href="https://github.com/SenryLee/frisket/releases/download/v1.1.1/Frisket_1.1.1_aarch64.dmg"><strong>Download Frisket 1.1.1</strong></a>
   <br>
-  <sub><code>Frisket_1.1.0_aarch64.dmg</code> · or open the <a href="https://github.com/SenryLee/frisket/releases/tag/v1.1.0">Releases</a> page</sub>
+  <sub><code>Frisket_1.1.1_aarch64.dmg</code> · or open the <a href="https://github.com/SenryLee/frisket/releases/tag/v1.1.1">Releases</a> page</sub>
 </p>
 
-1. Open the disk image and drag **Frisket** into Applications.
-2. If macOS says the developer cannot be verified, or that the app is damaged, leave the app in place.
-3. In Applications, **Control-click** Frisket, choose Open, and confirm the dialog.
-4. If it is still blocked, open System Settings → Privacy & Security and choose Open Anyway.
-5. Or clear the download quarantine, then open the app:
+1. Open the disk image and drag **Frisket** into Applications. Do not double-click Frisket inside the disk image.
+2. The first time, **Control-click** Frisket in Applications and choose Open. If macOS says the developer cannot be verified, confirm once. Leave the app in place.
+3. If it is still blocked, open System Settings → Privacy & Security and choose Open Anyway.
+4. Or clear the download quarantine, then open the app:
 
 ```bash
 xattr -cr /Applications/Frisket.app
@@ -76,6 +75,8 @@ The sidebar has two panes and one Open button:
 | Folders | Picks one folder, pins it, and expands it |
 
 Pinned folders fold level by level. Removing one from the list leaves the files on disk. The name in the title bar can be edited in place. The sidebar can also rename a file, reveal it in Finder, or copy its path.
+
+After Frisket has been opened once, double-clicking a `.md` file in Finder opens it here. If another editor was the default, this replaces it. Change it back later from Get Info on a file.
 
 ## Appearance
 
@@ -154,7 +155,7 @@ The repository holds the source needed to build the app again. The middle column
 | `README.en.md` | The same guide in English. Features and paths match the Chinese page. |
 | `index.html` | The page the desktop window loads. Vite mounts `src/main.ts` from here. |
 | `gate.html` | A page that mounts only the editor kernel, at `/gate.html` during development. It checks layout and input. It is not the writing screen. |
-| `package.json` | Frontend dependencies and commands. `npm test` runs the unit tests, `npm run app:dev` opens the window, and `npm run app:build` makes the installer. The version is 1.1.0. |
+| `package.json` | Frontend dependencies and commands. `npm test` runs the unit tests, `npm run app:dev` opens the window, and `npm run app:build` makes the installer. The version is 1.1.1. |
 | `package-lock.json` | The exact npm lock. After a clone, `npm install` fetches this same set. |
 | `tsconfig.json` | TypeScript options. `@/` points at `src/`. This checks types and does not emit a separate JavaScript build. |
 | `vite.config.ts` | The dev server and the frontend bundle. `@codemirror` and `@lezer` share one `editor` chunk, so the installed app does not open blank. |
@@ -241,7 +242,7 @@ These stay on the machine that builds Frisket, or they live only on the Release.
 | `.env`, keys, certificates | Keys stay in the Keychain. The repository contains nobody’s key. |
 | Test reports, Playwright browsers, editor scratch files | Local caches. |
 | `.workbuddy/`, `.verify/` | Local notes and a temporary comparison test. |
-| The `.dmg` and `.app` | Attached to [Releases](https://github.com/SenryLee/frisket/releases/tag/v1.1.0). That one file is enough to use the app. Cloning the repository is not required. |
+| The `.dmg` and `.app` | Attached to [Releases](https://github.com/SenryLee/frisket/releases/tag/v1.1.1). That one file is enough to use the app. Cloning the repository is not required. |
 
 ## License
 

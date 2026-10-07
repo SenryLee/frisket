@@ -23,7 +23,7 @@ import { installDevBridge, removeDevBridge } from '@/store/devBridge'
 import { SLATE_EVENT, emitSlateEvent, onSlateEvent } from '@/core/protocol'
 import { CMD, EVENT } from '@/ipc/commands'
 import { isTauriRuntime } from '@/store/appearance'
-import { newMarkdown, noteDocumentEdited, openFromChrome, saveMarkdown } from '@/store/session'
+import { newMarkdown, noteDocumentEdited, openFromChrome, openFromFinder, saveMarkdown } from '@/store/session'
 import { syncAiWindow } from '@/store/aiFrame'
 import type { EditorHandle, GlassMode } from '@/core/interfaces'
 
@@ -63,6 +63,7 @@ const editorHost = ref<HTMLDivElement | null>(null)
 const editorHandle = ref<EditorHandle | null>(null)
 const settingsOpen = ref(false)
 let stopGlass: (() => void) | null = null
+let stopOpens: (() => void) | null = null
 
 const glassActive = computed(() => {
   const mode = store.appearance.prefs.glass.mode
@@ -111,6 +112,7 @@ function subscribeEditorEvents(): void {
   unsubscribers.push(
     onSlateEvent(SLATE_EVENT.ready, (detail) => {
       editorHandle.value = detail.handle
+      void drainFinderOpens()
       // 门禁测试桥：仅 dev 构建挂载，prod 由 import.meta.env.DEV 剔除。
       // 装配细节见 store/devBridge.ts —— 那里也实现了 toggleTheme /
       // toggleAiPanel，因为这两个操作要动视觉层的 store，内核拿不到。
@@ -185,6 +187,28 @@ function handleGlobalKeydown(event: KeyboardEvent): void {
   }
 }
 
+async function drainFinderOpens(): Promise<void> {
+  const handle = editorHandle.value
+  if (!isTauriRuntime() || handle === null) return
+  const { invoke } = await import('@tauri-apps/api/core')
+  const paths = await invoke<string[]>(CMD.docTakeOpens)
+  if (paths.length === 0) return
+  await openFromFinder(handle, paths)
+}
+
+async function attachFinderOpens(): Promise<void> {
+  if (!isTauriRuntime()) return
+  const { listen } = await import('@tauri-apps/api/event')
+  const unlisten = await listen(EVENT.docOpen, () => {
+    void drainFinderOpens()
+  })
+  stopOpens = () => {
+    unlisten()
+  }
+  // 启动时的打开事件可能早于这次监听。挂上之后再取一次队列。
+  await drainFinderOpens()
+}
+
 async function attachGlass(): Promise<void> {
   if (!isTauriRuntime()) return
   const [{ invoke }, { listen }] = await Promise.all([
@@ -215,6 +239,7 @@ onMounted(() => {
   window.addEventListener('keydown', handleGlobalKeydown)
   notifyHostReady()
   void attachGlass()
+  void attachFinderOpens()
   editorHandle.value?.focus()
 
   // 拉历史放在挂载后而不是 setup 里：它是异步 IO，
@@ -250,6 +275,7 @@ onBeforeUnmount(() => {
   unsubscribeEditorEvents()
   window.removeEventListener('keydown', handleGlobalKeydown)
   stopGlass?.()
+  stopOpens?.()
 })
 </script>
 

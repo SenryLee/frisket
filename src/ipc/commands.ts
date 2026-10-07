@@ -28,6 +28,7 @@ export const CMD = {
   docHistory: 'doc_history',
   docHistoryRemove: 'doc_history_remove',
   docHistoryClear: 'doc_history_clear',
+  docTakeOpens: 'doc_take_opens',
 
   // 快照与撤销
   docSnapshot: 'doc_snapshot',
@@ -72,6 +73,8 @@ export const EVENT = {
   resized: 'window:resized',
   /** Rust 探测完玻璃能力后推一次，前端据此切换透明表面 */
   glassMode: 'glass:mode',
+  /** Finder 双击了一篇 Markdown。载荷是路径数组，前端再向 Rust 取走队列。 */
+  docOpen: 'doc:open',
   /** AI 流式增量。载荷是 { requestId, text } */
   aiDelta: 'ai:delta',
   /** 一轮回复结束，包括用户取消 */
