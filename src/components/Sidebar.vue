@@ -28,19 +28,24 @@ import {
 const store = useStore()
 const editorHandleRef = inject(EDITOR_HANDLE, null)
 
-const menu = ref<{ x: number; y: number; path: string } | null>(null)
+type MenuKind = 'history' | 'file'
+
+const menu = ref<{ x: number; y: number; path: string; kind: MenuKind } | null>(null)
 const renaming = ref<{ path: string; draft: string } | null>(null)
 const renameInput = ref<HTMLInputElement | null>(null)
 const notice = ref('')
+/** 右键「移除」之后才进入勾选。平时列表前面没有复选框。 */
+const picking = ref(false)
+const picked = ref<string[]>([])
 let noticeTimer = 0
 
-function openMenu(event: MouseEvent, path: string): void {
+function openMenu(event: MouseEvent, path: string, kind: MenuKind = 'file'): void {
   event.preventDefault()
   const width = 196
-  const height = 148
+  const height = kind === 'history' ? 188 : 148
   const x = Math.min(event.clientX, window.innerWidth - width - 8)
   const y = Math.min(event.clientY, window.innerHeight - height - 8)
-  menu.value = { x: Math.max(8, x), y: Math.max(8, y), path }
+  menu.value = { x: Math.max(8, x), y: Math.max(8, y), path, kind }
 }
 
 function startRename(path: string): void {
@@ -109,7 +114,75 @@ async function copyPath(path: string): Promise<void> {
 }
 
 function onKeydown(event: KeyboardEvent): void {
-  if (event.key === 'Escape') closeMenu()
+  if (event.key !== 'Escape') return
+  if (menu.value) {
+    closeMenu()
+    return
+  }
+  const target = event.target
+  if (target instanceof HTMLElement && target.closest('input, textarea')) return
+  if (picking.value) cancelPick()
+}
+
+function isPicked(id: string): boolean {
+  return picked.value.includes(id)
+}
+
+const allPicked = computed(() => {
+  const list = store.docs.list
+  return list.length > 0 && list.every((item) => picked.value.includes(item.id))
+})
+
+function togglePick(id: string): void {
+  setPicked(id, !picked.value.includes(id))
+}
+
+function setPicked(id: string, on: boolean): void {
+  const has = picked.value.includes(id)
+  if (on === has) return
+  picked.value = on ? [...picked.value, id] : picked.value.filter((item) => item !== id)
+}
+
+function onPickChange(id: string, event: Event): void {
+  const target = event.target
+  if (!(target instanceof HTMLInputElement)) return
+  setPicked(id, target.checked)
+}
+
+function toggleAllPicked(): void {
+  if (allPicked.value) {
+    picked.value = []
+    return
+  }
+  picked.value = store.docs.list.map((item) => item.id)
+}
+
+function cancelPick(): void {
+  picking.value = false
+  picked.value = []
+}
+
+function beginRemove(path: string): void {
+  closeMenu()
+  const item = store.docs.list.find((entry) => entry.path === path || entry.id === path)
+  if (!item) return
+  picking.value = true
+  if (!picked.value.includes(item.id)) picked.value = [...picked.value, item.id]
+}
+
+async function confirmRemove(): Promise<void> {
+  const ids = picked.value.filter((id) => store.docs.list.some((item) => item.id === id))
+  if (ids.length === 0) {
+    cancelPick()
+    return
+  }
+  const error = await store.docs.dropHistory(ids)
+  if (error) {
+    showNotice(error, 3200)
+    return
+  }
+  cancelPick()
+  showNotice(ids.length === 1 ? '已从历史移除，文件还在' : `已移除 ${ids.length} 条历史，文件还在`)
 }
 
 function onSidebarNotice(event: Event): void {
@@ -142,8 +215,17 @@ function openLibraryFile(path: string): void {
 }
 
 function showPane(pane: 'history' | 'folders'): void {
+  if (pane !== 'history') cancelPick()
   store.library.setPane(pane)
   if (pane === 'folders') void store.library.refreshAll()
+}
+
+function onHistoryClick(id: string): void {
+  if (picking.value) {
+    togglePick(id)
+    return
+  }
+  openDocument(id)
 }
 
 function createDocument(): void {
@@ -251,15 +333,29 @@ function retryLoadHistory(): void {
       </div>
 
       <!-- 正常列表 -->
-      <ul v-else class="sidebar__list">
-        <li v-for="item in store.docs.list" :key="item.id">
+      <ul v-else class="sidebar__list" :class="{ 'is-picking': picking }">
+        <li
+          v-for="item in store.docs.list"
+          :key="item.id"
+          class="sidebar__row"
+          :class="{ 'is-picked': picking && isPicked(item.id) }"
+        >
+          <label v-if="picking" class="sidebar__check">
+            <input
+              type="checkbox"
+              :checked="isPicked(item.id)"
+              :aria-label="`选择 ${item.title}`"
+              @click.stop
+              @change="onPickChange(item.id, $event)"
+            />
+          </label>
           <button
             class="sidebar__item"
             type="button"
             :class="{ 'is-active': item.id === store.docs.currentId }"
             :title="item.path"
-            @click="openDocument(item.id)"
-            @contextmenu="openMenu($event, item.path)"
+            @click="onHistoryClick(item.id)"
+            @contextmenu="openMenu($event, item.path, 'history')"
           >
             <!-- 第一行标题+时间（都是「定位信息」），第二行预览（是「内容信息」） -->
             <span class="sidebar__item-top">
@@ -277,7 +373,21 @@ function retryLoadHistory(): void {
     </div>
 
     <!-- 底部：文档总数。只在有内容时显示，空态下这个数字是 0，没有信息量 -->
-    <div v-if="store.library.pane === 'history' && !store.docs.isEmpty" class="sidebar__footer">
+    <div v-if="store.library.pane === 'history' && picking" class="sidebar__footer sidebar__pick">
+      <button type="button" @click="toggleAllPicked">{{ allPicked ? '取消全选' : '全选' }}</button>
+      <span class="sidebar__pick-count">已选 {{ picked.length }}</span>
+      <button
+        class="sidebar__pick-go"
+        type="button"
+        :disabled="picked.length === 0"
+        title="只从历史里去掉，不删除文件"
+        @click="confirmRemove"
+      >
+        移除
+      </button>
+      <button type="button" @click="cancelPick">取消</button>
+    </div>
+    <div v-else-if="store.library.pane === 'history' && !store.docs.isEmpty" class="sidebar__footer">
       共 {{ store.docs.list.length }} 篇
       <span class="sidebar__footer-path truncate">{{
         store.docs.current ? shortenPath(store.docs.current.path) : ''
@@ -309,6 +419,19 @@ function retryLoadHistory(): void {
         <button type="button" role="menuitem" :disabled="menu.path === ''" @click="copyPath(menu.path)">
           复制路径
         </button>
+        <template v-if="menu.kind === 'history'">
+          <div class="sidebar__menu-sep" role="separator" />
+          <button
+            class="sidebar__menu-remove"
+            type="button"
+            role="menuitem"
+            :disabled="menu.path === ''"
+            title="从历史里去掉，不删除文件"
+            @click="beginRemove(menu.path)"
+          >
+            移除
+          </button>
+        </template>
       </div>
     </div>
   </Teleport>

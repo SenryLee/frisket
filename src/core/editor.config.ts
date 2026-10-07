@@ -32,6 +32,7 @@ import { markdownKeymap } from '@/editor/keys'
 import { formatKeymap } from '@/editor/format-keys'
 import { colorField, colorTheme } from '@/editor/live/field.color'
 import { layoutField } from '@/editor/live/field.layout'
+import { imageField } from '@/editor/live/field.image'
 import { inlineField } from '@/editor/live/field.inline'
 import { revealField } from '@/editor/live/field.reveal'
 import { stylingPlugin } from '@/editor/live/plugin.styling'
@@ -93,6 +94,7 @@ export function baseExtensions(options: BaseExtensionOptions): Extension[] {
     // 顺序有讲究：layoutField 提供行高（编辑器算高度图时最需要它），
     // revealField 只存状态，inlineField 消费 revealField 的结果。
     layoutField,
+    imageField,
     revealField,
     inlineField,
     stylingPlugin,

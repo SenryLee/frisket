@@ -7,6 +7,7 @@
 import { CMD } from '@/ipc/commands'
 import type { DocumentMeta, EditorHandle } from '@/core/interfaces'
 import { fileNameFromInput, fileStem } from '@/core/filename'
+import { directoryOf, setImageBaseDir } from '@/editor/live/image-src'
 import { markEditorClean } from '@/core/mount'
 import { docs } from './docs'
 import { editor } from './editor'
@@ -150,10 +151,18 @@ export async function renameDocument(
       text !== null
         ? describe(nextPath, text)
         : retitle(previous, path, nextPath, stem)
+    const hidden = docs.isHistoryOmitted(path)
     docs.remove(path)
+    if (hidden) {
+      docs.allowHistory(path)
+      docs.holdFromHistory(nextPath)
+    }
     docs.upsert(meta)
     if (docs.currentId === path || current) docs.setCurrent(meta.id)
-    if (current) docs.setActivePath(nextPath)
+    if (current) {
+      docs.setActivePath(nextPath)
+      handle?.refresh()
+    }
     docs.setSaveError(null)
     return true
   } catch (error: unknown) {
@@ -231,6 +240,7 @@ async function createFile(handle: EditorHandle, folder: string, name: string): P
     docs.upsert(meta)
     docs.setCurrent(meta.id)
     docs.setActivePath(path)
+    handle.refresh()
     docs.setPendingName('未命名')
     askedUntitled = false
     editor.setDirty(false)
@@ -266,6 +276,8 @@ async function loadPath(handle: EditorHandle, path: string): Promise<void> {
     const { invoke } = await import('@tauri-apps/api/core')
     const text = await invoke<string>(CMD.docRead, { path })
     clearSaveTimer()
+    docs.allowHistory(path)
+    setImageBaseDir(directoryOf(path))
     handle.setDoc(text)
     docs.setActivePath(path)
     const meta = describe(path, text)
@@ -336,6 +348,7 @@ async function writeFile(path: string, text: string): Promise<void> {
 }
 
 async function touchHistory(meta: DocumentMeta): Promise<void> {
+  if (docs.isHistoryOmitted(meta.id) || docs.isHistoryOmitted(meta.path)) return
   const { invoke } = await import('@tauri-apps/api/core')
   await invoke(CMD.docHistoryTouch, { meta })
 }

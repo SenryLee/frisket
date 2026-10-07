@@ -33,6 +33,7 @@ import AiPanelShell from './components/AiPanelShell.vue'
 import AppTitleBar from './components/AppTitleBar.vue'
 import FollowingBar from './components/FollowingBar.vue'
 import SettingsPanel from './components/SettingsPanel.vue'
+import OutlineDrawer from './components/OutlineDrawer.vue'
 import Sidebar from './components/Sidebar.vue'
 import StatusBar from './components/StatusBar.vue'
 import Toolbar from './components/Toolbar.vue'
@@ -298,6 +299,7 @@ onBeforeUnmount(() => {
       <AiPanelShell>
         <AiPanel @open-settings="settingsOpen = true" />
       </AiPanelShell>
+      <OutlineDrawer />
     </div>
     <SettingsPanel v-if="settingsOpen" @close="settingsOpen = false" />
     <FolderPicker />

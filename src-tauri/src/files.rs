@@ -223,6 +223,29 @@ pub fn doc_history_touch(app: AppHandle, meta: DocumentMeta) -> Result<(), Strin
     write_history(&app, &items)
 }
 
+/// 从历史里去掉这些记录。只改 history.json，不删除用户的文件。
+#[tauri::command]
+pub fn doc_history_remove(app: AppHandle, ids: Vec<String>) -> Result<(), String> {
+    let items = doc_history(app.clone())?;
+    let next = omit_history_entries(&items, &ids);
+    if next.len() == items.len() {
+        return Ok(());
+    }
+    write_history(&app, &next)
+}
+
+fn omit_history_entries(items: &[DocumentMeta], ids: &[String]) -> Vec<DocumentMeta> {
+    let drop: HashSet<&str> = ids.iter().map(String::as_str).filter(|id| !id.is_empty()).collect();
+    if drop.is_empty() {
+        return items.to_vec();
+    }
+    items
+        .iter()
+        .filter(|item| !drop.contains(item.id.as_str()) && !drop.contains(item.path.as_str()))
+        .cloned()
+        .collect()
+}
+
 /// 在 Finder 中显示这个文件。路径必须是绝对路径，且不能含 `..`。
 #[tauri::command]
 pub fn doc_reveal_in_finder(path: String) -> Result<(), String> {
@@ -382,7 +405,10 @@ fn file_path_string(path: tauri_plugin_dialog::FilePath) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{allocate_markdown, checked_path, doc_list_markdown, rename_markdown, sanitized_stem};
+    use super::{
+        allocate_markdown, checked_path, doc_list_markdown, omit_history_entries, rename_markdown,
+        sanitized_stem, DocumentMeta,
+    };
     use std::fs;
 
     #[test]
@@ -478,6 +504,32 @@ mod tests {
         let listed = doc_list_markdown(root.to_string_lossy().into_owned()).unwrap();
         assert_eq!(listed.len(), 300);
         let _ = fs::remove_dir_all(&root);
+    }
+
+    fn meta(id: &str, path: &str) -> DocumentMeta {
+        DocumentMeta {
+            id: id.to_string(),
+            path: path.to_string(),
+            title: id.to_string(),
+            preview: String::new(),
+            word_count: 1,
+            created_at: "a".to_string(),
+            opened_at: "b".to_string(),
+        }
+    }
+
+    #[test]
+    fn omit_history_drops_matching_records_only() {
+        let items = vec![
+            meta("/notes/甲.md", "/notes/甲.md"),
+            meta("hash-乙", "/notes/乙.md"),
+            meta("/notes/丙.md", "/notes/丙.md"),
+        ];
+        let left = omit_history_entries(&items, &["/notes/甲.md".into(), "/notes/乙.md".into()]);
+        assert_eq!(left.len(), 1);
+        assert_eq!(left[0].id, "/notes/丙.md");
+        assert_eq!(omit_history_entries(&items, &[]).len(), 3);
+        assert_eq!(omit_history_entries(&items, &["".into(), "/missing".into()]).len(), 3);
     }
 }
 

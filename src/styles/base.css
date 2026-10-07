@@ -113,6 +113,9 @@ select,
 textarea {
   font: inherit;
   color: inherit;
+  /* 父级若是窗口拖拽区，按钮边缘仍会被系统当成拖拽，第一下点不中。 */
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
 }
 
 button {

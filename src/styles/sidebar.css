@@ -48,8 +48,8 @@
 }
 
 .sidebar__switch button {
-  height: 22px;
-  padding: 0 8px;
+  height: 28px;
+  padding: 0 10px;
   border-radius: var(--radius-full);
   color: var(--text-muted);
   font-size: var(--text-2xs);
@@ -73,8 +73,8 @@
 }
 
 .sidebar__header-button {
-  height: 24px;
-  padding: 0 8px;
+  height: 28px;
+  padding: 0 10px;
   border-radius: var(--radius-full);
   background: var(--bg-sunken);
   color: var(--text-secondary);
@@ -99,6 +99,40 @@
   margin: 0;
   padding: 0 var(--space-3) var(--space-4);
   list-style: none;
+}
+
+.sidebar__row {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  min-width: 0;
+}
+
+.sidebar__row .sidebar__item {
+  flex: 1;
+  width: auto;
+  min-width: 0;
+}
+
+.sidebar__check {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 36px;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.sidebar__check input {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.sidebar__row.is-picked .sidebar__item:not(.is-active) {
+  background: var(--bg-hover);
 }
 
 .sidebar__item {
@@ -302,6 +336,52 @@
 
 .sidebar__menu button:disabled {
   color: #9d9db0;
+}
+
+.sidebar__menu-sep {
+  height: 1px;
+  margin: 4px 8px;
+  background: #e9e9f0;
+}
+
+.sidebar__menu-remove {
+  color: #b42318;
+}
+
+.sidebar__menu-remove:hover:not(:disabled) {
+  background: #fdecec;
+}
+
+.sidebar__pick {
+  gap: 6px;
+  height: auto;
+  min-height: var(--statusbar-height);
+  padding: 8px 10px;
+}
+
+.sidebar__pick button {
+  height: 26px;
+  padding: 0 8px;
+  border-radius: 8px;
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  font-size: var(--text-2xs);
+}
+
+.sidebar__pick-count {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+
+.sidebar__pick .sidebar__pick-go {
+  background: #b42318;
+  color: #fff;
+}
+
+.sidebar__pick .sidebar__pick-go:hover:not(:disabled) {
+  background: #912018;
 }
 
 .sidebar__rename {

@@ -19,9 +19,11 @@
  * 文件所有权：src/store/** 属于 ui-shell（视觉）。
  */
 
+import type { DocumentMeta } from '@/core/interfaces'
 import type { EditorDevControls, EditorReadyDetail } from '@/core/protocol'
 import { appearance } from './appearance'
 import { ai } from './ai'
+import { docs } from './docs'
 
 /**
  * window.__slate 的最终形状。
@@ -40,6 +42,8 @@ export interface DevBridge {
   isComposing(): boolean
   toggleTheme(themeId?: string): void
   toggleAiPanel(): void
+  /** 只在 dev 里给侧栏塞历史，方便看移除交互。生产构建不会挂上。 */
+  seedHistory(items: DocumentMeta[]): void
 }
 
 /** 全局名的类型声明。挂在 window 上必须有声明，否则 TS 报错 */
@@ -103,6 +107,9 @@ export function installDevBridge(detail: EditorReadyDetail): void {
     },
     toggleAiPanel: () => {
       ai.toggle()
+    },
+    seedHistory: (items) => {
+      for (const item of items) docs.upsert(item)
     },
   }
 

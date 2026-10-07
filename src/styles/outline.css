@@ -1,0 +1,252 @@
+/* 目录抽屉。探出用 transform，不挤正文。钉住后占左侧一列，宽度由拖动手柄决定。 */
+
+.outline {
+  --outline-width: 232px;
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  z-index: var(--z-panel);
+  width: 0;
+  pointer-events: none;
+}
+
+.outline.is-pinned {
+  position: relative;
+  order: -1;
+  flex: 0 0 var(--outline-width);
+  width: var(--outline-width);
+  min-height: 0;
+  align-self: stretch;
+  overflow: hidden;
+  pointer-events: auto;
+}
+
+/* 钉住时文件栏让开，目录自己占左边。收起后文件栏按原来的折叠状态回来。 */
+html[data-outline-dock='1'] .app__sidebar-slot {
+  width: 0;
+  transition: none;
+}
+
+.outline__edge {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 2;
+  width: 8px;
+  /* 只用来对齐热区。点击要落到侧栏和工具栏上，不能被这层吃掉。 */
+  pointer-events: none;
+}
+
+.outline__launch {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  z-index: 5;
+  width: 28px;
+  height: 72px;
+  padding: 0;
+  border: 1px solid var(--border-subtle);
+  border-left: 0;
+  border-radius: 0 10px 10px 0;
+  background: var(--bg-base);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  letter-spacing: 0.12em;
+  writing-mode: vertical-rl;
+  cursor: pointer;
+  pointer-events: auto;
+  transform: translateY(-50%);
+  transition: opacity var(--dur-fast-eff) var(--ease-out);
+}
+
+.outline__launch:hover {
+  color: var(--text-primary);
+}
+
+.outline.is-pinned .outline__launch {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.outline__panel {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  width: var(--outline-width);
+  border-right: 1px solid var(--border-subtle);
+  background: var(--bg-base);
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+  pointer-events: none;
+  transform: translateX(-100%);
+  transition: transform var(--dur-panel-eff) var(--ease-out);
+}
+
+.outline.is-open .outline__panel {
+  /* 滑入时先不接点击，底下的侧栏和工具栏按钮仍然能点中。 */
+  pointer-events: none;
+  box-shadow: 12px 0 32px rgb(0 0 0 / 0.14);
+  transform: translateX(0);
+}
+
+.outline.is-pinned .outline__panel,
+.outline.is-ready .outline__panel {
+  pointer-events: auto;
+}
+
+.outline.is-pinned .outline__panel {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  transform: none;
+  box-shadow: none;
+  transition: none;
+}
+
+.outline.is-resizing,
+.outline.is-resizing .outline__panel {
+  transition: none;
+}
+
+.outline__resize {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 4;
+  width: 8px;
+  cursor: col-resize;
+  pointer-events: none;
+  touch-action: none;
+}
+
+.outline.is-pinned .outline__resize,
+.outline.is-ready .outline__resize {
+  pointer-events: auto;
+}
+
+.outline__resize::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--border-strong);
+  opacity: 0.7;
+}
+
+.outline__resize:hover::after,
+.outline.is-resizing .outline__resize::after {
+  background: var(--accent);
+}
+
+.outline__head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: var(--toolbar-height);
+  padding: 0 8px 0 14px;
+  flex-shrink: 0;
+}
+
+.outline__head h2 {
+  font-size: var(--text-sm);
+  font-weight: 650;
+  color: var(--text-secondary);
+}
+
+.outline__head span {
+  color: var(--text-muted);
+  font-size: var(--text-2xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.outline__head button {
+  height: 28px;
+  margin-left: auto;
+  padding: 0 10px;
+  border-radius: var(--radius-full);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+
+.outline__head button:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+.outline__empty {
+  margin: 0;
+  padding: 4px 14px;
+  color: var(--text-muted);
+  font-size: var(--text-2xs);
+}
+
+.outline__list {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  padding: 0 8px 12px;
+  overflow: auto;
+  list-style: none;
+  overscroll-behavior: contain;
+}
+
+.outline__row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  height: 28px;
+  border-radius: 8px;
+}
+
+.outline__row.is-active {
+  background: var(--bg-hover);
+  box-shadow: inset 2px 0 0 var(--text-primary);
+}
+
+.outline__chevron,
+.outline__jump {
+  cursor: pointer;
+}
+
+.outline__chevron {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 28px;
+  transition: transform var(--dur-fast-eff) var(--ease-out);
+}
+
+button.outline__chevron.is-open {
+  transform: rotate(90deg);
+}
+
+.outline__jump {
+  flex: 1;
+  min-width: 0;
+  height: 28px;
+  padding: 0 6px 0 0;
+  color: var(--text-primary);
+  font-size: var(--text-xs);
+  text-align: left;
+}
+
+.outline__jump span {
+  display: block;
+}
+
+.outline__row:hover {
+  background: var(--bg-hover);
+}

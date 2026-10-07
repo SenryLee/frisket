@@ -5,11 +5,9 @@
  * 在整体中的位置：App.vue 最顶部的通栏，位于三栏之上。
  * macOS 红绿灯按钮浮在它左侧，所以左侧留出 traffic-light 的宽度。
  *
- * ★ 为什么标题栏自己不发事件 ★
- * 拖拽区必须整块可拖，但按钮区域必须可点。
- * 两者靠 CSS 的 -webkit-app-region 完成：
- * 父级 drag、按钮 no-drag。不需要在 JS 里判断鼠标位置 ——
- * 那种实现在快速拖拽时会出现「按钮点不动」的边缘情况。
+ * ★ 拖拽层不能当按钮的祖先 ★
+ * WebKit 里，拖拽区的子按钮即使标了 no-drag，边缘也常常要点两次。
+ * 拖拽层铺在标题栏背后，按钮是它的兄弟，整颗按钮都按普通点击处理。
  */
 import { computed, inject, nextTick, ref } from 'vue'
 import { CMD } from '@/ipc/commands'
@@ -43,7 +41,7 @@ function onTitleMouseDown(event: MouseEvent): void {
   const target = event.target
   if (!(target instanceof Element)) return
   if (target.closest('button, select, input, textarea, a, option, label')) return
-  // 标题和空白弹簧已经标了 data-tauri-drag-region，交给系统拖，避免拖两次。
+  // 背后的拖拽层已经标了 data-tauri-drag-region，交给系统拖，避免拖两次。
   if (target.closest('[data-tauri-drag-region]')) return
   const drag = startDragging
   if (drag === null) return
@@ -139,6 +137,7 @@ function onThemeChange(event: Event): void {
   <!-- 不绑 data-dark：暗色判定由 themes.css 的 color-scheme 负责，
 在组件里再存一份会出现两处真相，且主题切换时可能不同步 -->
   <header class="title-bar" :class="{ 'is-glass': glass }" @mousedown="onTitleMouseDown">
+    <div class="title-bar__drag" data-tauri-drag-region />
     <!-- 左侧：红绿灯占位 + 侧栏开关 -->
     <div class="title-bar__left">
       <button
@@ -186,7 +185,7 @@ function onThemeChange(event: Event): void {
       />
     </div>
 
-    <div class="spacer" data-tauri-drag-region />
+    <div class="spacer" />
 
     <!-- 右侧：主题切换 + AI 面板开关 -->
     <div class="title-bar__right">
@@ -268,15 +267,13 @@ function onThemeChange(event: Event): void {
 
 <style scoped>
 .title-bar {
+  position: relative;
   display: flex;
   align-items: center;
   height: var(--titlebar-height);
   /* 红绿灯按钮浮在左侧，为它让出空间。
    * 78px 是 macOS Big Sur+ 的标准宽度。 */
   padding: 0 var(--space-4) 0 78px;
-  /* ★ 拖拽区 ★ 整块可拖动窗口 */
-  -webkit-app-region: drag;
-  app-region: drag;
   /* 标题栏本身不参与玻璃模糊：它的内容极少，
    * 模糊带来的视觉收益抵不上多一次合成层的开销 */
   background: var(--bg-base);
@@ -295,12 +292,29 @@ function onThemeChange(event: Event): void {
   -webkit-backdrop-filter: blur(22px) saturate(160%);
 }
 
+.title-bar__drag {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  -webkit-app-region: drag;
+  app-region: drag;
+}
+
 .title-bar__left,
 .title-bar__right {
+  position: relative;
+  z-index: 1;
   display: flex;
   align-items: center;
   gap: var(--space-3);
   min-width: 0;
+}
+
+.title-bar > .spacer {
+  position: relative;
+  z-index: 1;
+  align-self: stretch;
+  pointer-events: none;
 }
 
 .title-bar__name,
@@ -332,8 +346,8 @@ function onThemeChange(event: Event): void {
   align-items: center;
   justify-content: center;
   gap: 4px;
-  min-width: var(--control-height);
-  height: var(--control-height);
+  min-width: 30px;
+  height: 30px;
   padding: 0 8px;
   border-radius: var(--radius-full);
   color: var(--text-secondary);
@@ -362,7 +376,7 @@ function onThemeChange(event: Event): void {
 }
 
 .title-bar__theme {
-  height: var(--control-height-sm);
+  height: 30px;
   padding: 0 var(--space-2);
   border: 1px solid var(--border);
   border-radius: var(--radius-full);

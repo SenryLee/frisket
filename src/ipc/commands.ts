@@ -26,6 +26,7 @@ export const CMD = {
 
   // 历史记录
   docHistory: 'doc_history',
+  docHistoryRemove: 'doc_history_remove',
   docHistoryClear: 'doc_history_clear',
 
   // 快照与撤销

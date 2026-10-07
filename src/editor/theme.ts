@@ -51,12 +51,12 @@ const METRICS = {
  * padding 在盒模型内部，只影响本行自身高度。
  */
 const HEADING_METRICS = [
-  { className: 'cm-md-h1', size: 'var(--text-2xl)', weight: '700' },
-  { className: 'cm-md-h2', size: 'var(--text-xl)', weight: '700' },
-  { className: 'cm-md-h3', size: 'var(--text-lg)', weight: '600' },
-  { className: 'cm-md-h4', size: 'var(--text-md)', weight: '600' },
-  { className: 'cm-md-h5', size: 'var(--text-base)', weight: '600' },
-  { className: 'cm-md-h6', size: 'var(--text-sm)', weight: '600' },
+  { className: 'cm-md-h1', size: 'var(--text-2xl)', weight: '700', color: 'var(--text-h1)' },
+  { className: 'cm-md-h2', size: 'var(--text-xl)', weight: '700', color: 'var(--text-h2)' },
+  { className: 'cm-md-h3', size: 'var(--text-lg)', weight: '600', color: 'var(--text-h3)' },
+  { className: 'cm-md-h4', size: 'var(--text-md)', weight: '600', color: 'var(--text-h4)' },
+  { className: 'cm-md-h5', size: 'var(--text-base)', weight: '600', color: 'var(--text-h4)' },
+  { className: 'cm-md-h6', size: 'var(--text-sm)', weight: '600', color: 'var(--text-h4)' },
 ] as const
 
 /** 编辑器骨架样式。 */
@@ -133,6 +133,9 @@ const headingTheme = EditorView.theme(
       {
         fontSize: item.size,
         fontWeight: item.weight,
+        color: item.color,
+        // WebKit 透明窗口有时不认 color，只认填充色。两个一起写，标题色才稳。
+        WebkitTextFillColor: item.color,
         // 标题行高用无单位倍数，与字号解耦：
         // 换字号时行高按比例走，不需要重新调这个值
         lineHeight: '1.4',
@@ -184,16 +187,94 @@ const blockTheme = EditorView.theme({
   '.cm-md-rule-line': {
     color: 'var(--text-muted)',
   },
+
+  // 图片是窗框里的一张图。高度来自图片本身，挂在 StateField 上，
+  // 不靠把整行 display:none 藏起来。
+  '.cm-md-figure': {
+    display: 'block',
+    boxSizing: 'border-box',
+    maxWidth: '100%',
+    margin: '10px 0 14px',
+    padding: '0 0 8px',
+    border: '1px solid var(--border-strong)',
+    borderRadius: 'var(--radius-lg)',
+    background: 'var(--bg-raised)',
+    boxShadow: 'var(--shadow-md)',
+    overflow: 'hidden',
+  },
+  '.cm-md-figure.is-inline': {
+    display: 'inline-block',
+    verticalAlign: 'middle',
+    width: 'auto',
+    maxWidth: '100%',
+    margin: '0 0.2em',
+    padding: '4px',
+    boxShadow: 'var(--shadow-sm)',
+  },
+  '.cm-md-figure__chrome': {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    height: '28px',
+    padding: '0 10px',
+    background: 'var(--bg-sunken)',
+    borderBottom: '1px solid var(--border-subtle)',
+  },
+  '.cm-md-figure__dots': {
+    flexShrink: '0',
+    width: '36px',
+    height: '8px',
+    borderRadius: '999px',
+    background:
+      'radial-gradient(circle at 4px 50%, var(--text-muted) 3px, transparent 3.5px), radial-gradient(circle at 16px 50%, var(--border-strong) 3px, transparent 3.5px), radial-gradient(circle at 28px 50%, var(--border-strong) 3px, transparent 3.5px)',
+  },
+  '.cm-md-figure__title': {
+    minWidth: '0',
+    overflow: 'hidden',
+    color: 'var(--text-secondary)',
+    fontSize: 'var(--text-xs)',
+    fontWeight: '500',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+  },
+  '.cm-md-figure__img': {
+    display: 'block',
+    maxWidth: '100%',
+    maxHeight: '440px',
+    width: 'auto',
+    height: 'auto',
+    margin: '0 auto',
+    objectFit: 'contain',
+    background: 'var(--bg-sunken)',
+  },
+  '.cm-md-figure.is-inline .cm-md-figure__img': {
+    maxHeight: '9em',
+  },
+  '.cm-md-figure__note': {
+    display: 'none',
+    padding: '18px 14px',
+    color: 'var(--text-muted)',
+    fontSize: 'var(--text-xs)',
+  },
+  '.cm-md-figure.is-broken .cm-md-figure__img, .cm-md-figure.is-local .cm-md-figure__img': {
+    display: 'none',
+  },
+  '.cm-md-figure.is-broken .cm-md-figure__note, .cm-md-figure.is-local .cm-md-figure__note': {
+    display: 'block',
+  },
 })
 
 /** 行内强调样式。纯字重字色，不涉及盒模型。 */
 const inlineTheme = EditorView.theme({
   '.cm-md-strong': {
     fontWeight: '700',
-    color: 'var(--text-primary)',
+    color: 'var(--text-strong)',
+    WebkitTextFillColor: 'var(--text-strong)',
   },
   '.cm-md-em': {
     fontStyle: 'italic',
+    color: 'var(--text-em)',
+    WebkitTextFillColor: 'var(--text-em)',
   },
   '.cm-md-strike': {
     textDecoration: 'line-through',

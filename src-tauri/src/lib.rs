@@ -8,8 +8,9 @@ mod glass;
 
 use ai::{ai_cancel, ai_chat, ai_list_models, settings_get, settings_set};
 use files::{
-    doc_create, doc_history, doc_history_touch, doc_list_markdown, doc_pick_folder, doc_pick_open,
-    doc_pick_save, doc_read, doc_rename, doc_reveal_in_finder, doc_write, wallpaper_pick,
+    doc_create, doc_history, doc_history_remove, doc_history_touch, doc_list_markdown,
+    doc_pick_folder, doc_pick_open, doc_pick_save, doc_read, doc_rename, doc_reveal_in_finder,
+    doc_write, wallpaper_pick,
 };
 use glass::GlassMode;
 use tauri::{Emitter, Manager};
@@ -30,6 +31,7 @@ pub fn run() {
             doc_write,
             doc_reveal_in_finder,
             doc_history,
+            doc_history_remove,
             doc_history_touch,
             wallpaper_pick,
             settings_get,

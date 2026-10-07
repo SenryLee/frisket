@@ -3,8 +3,8 @@
 </p>
 
 <p align="center">
-  <strong>The page is set type. The file stays plain Markdown.</strong><br>
-  屏幕上是排好的正文。文件里始终是纯 Markdown。
+  <strong>A Markdown editor that does enough, then stops.</strong><br>
+  做一个适可而止的 Markdown 编辑器。
 </p>
 
 <p align="center">
@@ -12,13 +12,13 @@
   &nbsp;·&nbsp;
   <a href="#try-it">Try it</a>
   &nbsp;·&nbsp;
-  <a href="https://github.com/SenryLee/frisket/releases/tag/v1.0.0">Release</a>
+  <a href="https://github.com/SenryLee/frisket/releases/tag/v1.1.0">Release</a>
 </p>
 
 <p align="center">
   <img alt="macOS 13 or later" src="https://img.shields.io/badge/macOS-13%2B-D97757">
   <img alt="Apple silicon" src="https://img.shields.io/badge/Apple_Silicon-arm64-1A1816">
-  <img alt="Version 1.0.0" src="https://img.shields.io/badge/release-v1.0.0-D97757">
+  <img alt="Version 1.1.0" src="https://img.shields.io/badge/release-v1.1.0-D97757">
   <img alt="MIT" src="https://img.shields.io/badge/license-MIT-8C847C">
 </p>
 
@@ -29,9 +29,9 @@
 This build is for a Mac with **Apple silicon**, on **macOS 13** or later. The disk image is not signed by Apple, so the first open needs a manual allow.
 
 <p align="center">
-  <a href="https://github.com/SenryLee/frisket/releases/download/v1.0.0/Frisket_1.0.0_aarch64.dmg"><strong>Download Frisket 1.0.0</strong></a>
+  <a href="https://github.com/SenryLee/frisket/releases/download/v1.1.0/Frisket_1.1.0_aarch64.dmg"><strong>Download Frisket 1.1.0</strong></a>
   <br>
-  <sub><code>Frisket_1.0.0_aarch64.dmg</code> · or open the <a href="https://github.com/SenryLee/frisket/releases/tag/v1.0.0">Releases</a> page</sub>
+  <sub><code>Frisket_1.1.0_aarch64.dmg</code> · or open the <a href="https://github.com/SenryLee/frisket/releases/tag/v1.1.0">Releases</a> page</sub>
 </p>
 
 1. Open the disk image and drag **Frisket** into Applications.
@@ -154,7 +154,7 @@ The repository holds the source needed to build the app again. The column on the
 | `README.en.md` | The same guide in English. |
 | `index.html` | The page loaded inside the desktop window. Vite mounts `src/main.ts` from here. |
 | `gate.html` | A page that mounts only the editor kernel. In development it is `/gate.html`, used to check layout and input. It is not the writing screen. |
-| `package.json` | Frontend dependencies and commands. `npm test` runs the unit tests, `npm run app:dev` opens the window, and `npm run app:build` makes the installer. The version is 1.0.0. |
+| `package.json` | Frontend dependencies and commands. `npm test` runs the unit tests, `npm run app:dev` opens the window, and `npm run app:build` makes the installer. The version is 1.1.0. |
 | `package-lock.json` | The exact npm lock. After a clone, `npm install` uses it to fetch the same set. |
 | `tsconfig.json` | TypeScript options, and the `@/` alias that points at `src/`. |
 | `vite.config.ts` | The dev server and the frontend bundle. Editor packages go into one `editor` chunk. |
@@ -222,7 +222,7 @@ These stay on the machine that builds Frisket, or they live only on the Release.
 | `.env`, keys, certificates | Keys stay in the Keychain. The repository contains nobody’s key. |
 | Test reports, Playwright browsers, editor scratch files | Local caches. |
 | `.workbuddy/`, `.verify/` | Local notes and a temporary comparison test. |
-| The `.dmg` and `.app` | Attached to [Releases](https://github.com/SenryLee/frisket/releases/tag/v1.0.0). That one file is enough to use the app. Cloning the repository is not required. |
+| The `.dmg` and `.app` | Attached to [Releases](https://github.com/SenryLee/frisket/releases/tag/v1.1.0). That one file is enough to use the app. Cloning the repository is not required. |
 
 ## License
 

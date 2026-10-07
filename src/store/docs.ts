@@ -13,8 +13,33 @@
 import { reactive } from 'vue'
 import { CMD } from '@/ipc/commands'
 import type { DocumentMeta } from '@/core/interfaces'
+import { omitHistory } from '@/core/historyList'
 import { fileStem } from '@/core/filename'
+import { directoryOf, setImageBaseDir } from '@/editor/live/image-src'
 import { isTauriRuntime } from './appearance'
+
+/** 这次会话里用户从历史拿掉的路径。保存当前文档时不再写回去。 */
+const omitted = new Set<string>()
+
+function rememberOmitted(value: string): void {
+  if (value === '') return
+  omitted.add(value)
+  const normalized = value.normalize('NFC')
+  if (normalized !== value) omitted.add(normalized)
+}
+
+function forgetOmitted(value: string): void {
+  if (value === '') return
+  omitted.delete(value)
+  omitted.delete(value.normalize('NFC'))
+}
+
+function isOmitted(value: string): boolean {
+  if (value === '') return false
+  if (omitted.has(value)) return true
+  const normalized = value.normalize('NFC')
+  return normalized !== value && omitted.has(normalized)
+}
 
 const state = reactive<{
   /** 按最近打开时间倒序 —— 侧栏直接渲染，无需再排 */
@@ -103,6 +128,7 @@ export const docs = {
 
   setActivePath(path: string | null): void {
     state.activePath = path
+    setImageBaseDir(path === null ? null : directoryOf(path))
   },
 
   setPendingName(name: string): void {
@@ -134,6 +160,7 @@ export const docs = {
    * 用于打开文档后回填真实的 title / wordCount —— 后台扫描文件才能拿到。
    */
   upsert(meta: DocumentMeta): void {
+    if (isOmitted(meta.id) || isOmitted(meta.path)) return
     const index = state.items.findIndex((item) => item.id === meta.id)
     if (index === -1) {
       state.items = [meta, ...state.items]
@@ -147,6 +174,64 @@ export const docs = {
   /** 移除一条（元信息失效，如文件被删除）。只动列表，不碰当前文档 */
   remove(id: string): void {
     state.items = state.items.filter((item) => item.id !== id)
+  },
+
+  /** 这条路径是不是被用户从历史里拿掉了。打开文件时要先放开。 */
+  isHistoryOmitted(value: string): boolean {
+    return isOmitted(value)
+  },
+
+  /** 用户再次打开这个文件，允许它回到历史。 */
+  allowHistory(value: string): void {
+    forgetOmitted(value)
+  },
+
+  /** 重命名后，继续把新路径挡在历史外面。 */
+  holdFromHistory(value: string): void {
+    rememberOmitted(value)
+  },
+
+  /**
+   * 从历史里去掉这些记录。
+   *
+   * 不关闭正在编辑的文档，也不删磁盘上的文件。
+   * 失败时把列表和「已拿掉」标记一起还原。
+   */
+  async dropHistory(ids: readonly string[]): Promise<string | null> {
+    const next = omitHistory(state.items, ids)
+    if (next.length === state.items.length) return null
+    const removed = state.items.filter((item) => !next.includes(item))
+    const marked: string[] = []
+    const mark = (value: string): void => {
+      if (value === '' || omitted.has(value)) return
+      omitted.add(value)
+      marked.push(value)
+      const normalized = value.normalize('NFC')
+      if (normalized !== value && !omitted.has(normalized)) {
+        omitted.add(normalized)
+        marked.push(normalized)
+      }
+    }
+    for (const item of removed) {
+      mark(item.id)
+      mark(item.path)
+    }
+    const previous = state.items
+    state.items = next
+    if (!isTauriRuntime()) return null
+    try {
+      const { invoke } = await import('@tauri-apps/api/core')
+      const payload = [
+        ...new Set(removed.flatMap((item) => [item.id, item.path]).filter((id) => id !== '')),
+      ]
+      await invoke(CMD.docHistoryRemove, { ids: payload })
+      return null
+    } catch (error: unknown) {
+      for (const key of marked) omitted.delete(key)
+      state.items = previous
+      if (error instanceof Error && error.message.trim() !== '') return error.message
+      return '没能移除这些记录'
+    }
   },
 
   clear(): void {

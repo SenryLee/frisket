@@ -132,6 +132,13 @@
   --text-inverse: var(--c-text-inverse);
   --text-accent: var(--c-accent);
   --text-code: var(--c-code);
+  /* 阅读层次：标题四级、加粗、斜体。跟主题走，不跟正文字色混成一块。 */
+  --text-h1: var(--c-heading-1);
+  --text-h2: var(--c-heading-2);
+  --text-h3: var(--c-heading-3);
+  --text-h4: var(--c-heading-4);
+  --text-strong: var(--c-strong);
+  --text-em: var(--c-em);
 
   /* 强调色 */
   --accent: var(--c-accent);

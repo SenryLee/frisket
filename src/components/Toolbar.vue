@@ -5,6 +5,7 @@
  * 宽度不够时横向滚动，不换行。
  */
 import { computed, inject, onBeforeUnmount, onMounted, ref } from 'vue'
+import { retainPointer } from '@/core/reliablePress'
 import { EDITOR_HANDLE, useStore } from '@/store'
 import { sameHex, useSelectionInk } from './inkPreview'
 import { cancelPainter, painterArmed } from './toolbarActions'
@@ -113,9 +114,7 @@ function openPopover(kind: PopoverKind, event: MouseEvent): void {
 }
 
 function keepSelection(event: MouseEvent): void {
-  const target = event.target
-  if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) return
-  event.preventDefault()
+  retainPointer(event)
 }
 
 function submitLink(): void {
@@ -136,9 +135,7 @@ function hoverTable(rows: number, cols: number): void {
 }
 
 function keepPopover(event: MouseEvent): void {
-  const target = event.target
-  if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) return
-  event.preventDefault()
+  retainPointer(event)
 }
 
 function onCustomColor(event: Event): void {
@@ -506,8 +503,8 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  min-width: var(--control-height);
-  height: var(--control-height);
+  min-width: 30px;
+  height: 30px;
   padding: 0 var(--space-2);
   border-radius: 10px;
   color: var(--text-secondary);

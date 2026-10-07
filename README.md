@@ -3,8 +3,8 @@
 </p>
 
 <p align="center">
-  <strong>屏幕上是排好的正文。文件里始终是纯 Markdown。</strong><br>
-  A macOS editor. The page is set type. The file stays plain Markdown.
+  <strong>做一个适可而止的 Markdown 编辑器。</strong><br>
+  A Markdown editor that does enough, then stops.
 </p>
 
 <p align="center">
@@ -12,13 +12,13 @@
   &nbsp;·&nbsp;
   <a href="#下载试用">下载试用</a>
   &nbsp;·&nbsp;
-  <a href="https://github.com/SenryLee/frisket/releases/tag/v1.0.0">Release</a>
+  <a href="https://github.com/SenryLee/frisket/releases/tag/v1.1.0">Release</a>
 </p>
 
 <p align="center">
   <img alt="macOS 13 及以上" src="https://img.shields.io/badge/macOS-13%2B-D97757">
   <img alt="Apple 芯片" src="https://img.shields.io/badge/Apple_Silicon-arm64-1A1816">
-  <img alt="版本 1.0.0" src="https://img.shields.io/badge/release-v1.0.0-D97757">
+  <img alt="版本 1.1.0" src="https://img.shields.io/badge/release-v1.1.0-D97757">
   <img alt="MIT" src="https://img.shields.io/badge/license-MIT-8C847C">
 </p>
 
@@ -29,9 +29,9 @@
 这一版给 **Apple 芯片** 的 Mac。系统需要 **macOS 13** 或更高。安装包没有经过 Apple 签名，第一次打开要手动放行。
 
 <p align="center">
-  <a href="https://github.com/SenryLee/frisket/releases/download/v1.0.0/Frisket_1.0.0_aarch64.dmg"><strong>下载 Frisket 1.0.0</strong></a>
+  <a href="https://github.com/SenryLee/frisket/releases/download/v1.1.0/Frisket_1.1.0_aarch64.dmg"><strong>下载 Frisket 1.1.0</strong></a>
   <br>
-  <sub><code>Frisket_1.0.0_aarch64.dmg</code> · 也可到 <a href="https://github.com/SenryLee/frisket/releases/tag/v1.0.0">Releases</a> 页面下载</sub>
+  <sub><code>Frisket_1.1.0_aarch64.dmg</code> · 也可到 <a href="https://github.com/SenryLee/frisket/releases/tag/v1.1.0">Releases</a> 页面下载</sub>
 </p>
 
 1. 打开下载的磁盘映像，把 **Frisket** 拖进「应用程序」。
@@ -154,7 +154,7 @@ npm run app:build
 | `README.en.md` | 同一份说明的英文版。 |
 | `index.html` | 桌面窗口里的页面入口。Vite 从这里挂上 `src/main.ts`。 |
 | `gate.html` | 只挂编辑内核的检查页。开发时地址是 `/gate.html`，用来看排版和输入法，不是日常写作界面。 |
-| `package.json` | 前端依赖和命令。`npm test` 跑单元测试，`npm run app:dev` 开窗口，`npm run app:build` 打安装包。版本是 1.0.0。 |
+| `package.json` | 前端依赖和命令。`npm test` 跑单元测试，`npm run app:dev` 开窗口，`npm run app:build` 打安装包。版本是 1.1.0。 |
 | `package-lock.json` | npm 的精确版本锁。克隆之后 `npm install` 靠它装到同一套依赖。 |
 | `tsconfig.json` | TypeScript 的编译选项，并把 `@/` 指到 `src/`。 |
 | `vite.config.ts` | 开发服务器和前端打包。编辑器相关的包打进同一个 `editor` 块。 |
@@ -222,7 +222,7 @@ npm run app:build
 | `.env`、密钥、证书 | 密钥只留在钥匙串。仓库里没有任何人的密钥。 |
 | 测试报告、Playwright 浏览器、编辑器临时文件 | 本机缓存。 |
 | `.workbuddy/`、`.verify/` | 本机笔记和临时对照测试。 |
-| 安装包 `.dmg` / `.app` | 放在 [Releases](https://github.com/SenryLee/frisket/releases/tag/v1.0.0)。下载那一个文件就能用，不需要再克隆仓库。 |
+| 安装包 `.dmg` / `.app` | 放在 [Releases](https://github.com/SenryLee/frisket/releases/tag/v1.1.0)。下载那一个文件就能用，不需要再克隆仓库。 |
 
 ## 许可
 

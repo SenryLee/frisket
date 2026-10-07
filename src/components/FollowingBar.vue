@@ -5,6 +5,7 @@
  * 高亮和顶栏是同一块底色色板，不再另放一个 == 按钮。
  */
 import { inject, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { retainPointer } from '@/core/reliablePress'
 import { EDITOR_HANDLE, useStore } from '@/store'
 import { sameHex, useSelectionInk } from './inkPreview'
 import { BACKGROUND_COLORS } from './types'
@@ -79,9 +80,7 @@ function openHighlight(event: MouseEvent): void {
 }
 
 function keepPopover(event: MouseEvent): void {
-  const target = event.target
-  if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) return
-  event.preventDefault()
+  retainPointer(event)
 }
 
 function onCustomColor(event: Event): void {
@@ -136,7 +135,7 @@ onBeforeUnmount(() => {
     role="toolbar"
     aria-label="选区格式"
     :style="{ top: `${top}px`, left: `${left}px` }"
-    @mousedown.prevent
+    @mousedown="retainPointer"
   >
     <button
       v-for="button in leadButtons"
@@ -210,9 +209,9 @@ onBeforeUnmount(() => {
 }
 
 .following__button {
-  min-width: 26px;
-  height: 26px;
-  padding: 0 6px;
+  min-width: 30px;
+  height: 30px;
+  padding: 0 8px;
   border-radius: var(--radius-sm);
   color: var(--text-primary);
   font-size: var(--text-sm);
