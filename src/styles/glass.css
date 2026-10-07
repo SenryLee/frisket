@@ -1,0 +1,175 @@
+/* ============================================================
+ * glass.css —— 玻璃层次与三级降级
+ *
+ * 在整体中的位置：tokens.css 给出默认玻璃数值，本文件负责
+ * 「哪一层用多少模糊」以及「系统不支持时怎么办」。
+ *
+ * ★ 三层玻璃的分工 ★
+ *   L1  侧边栏 / AI 面板   blur 20px saturate 180%
+ *       这两块是「壳」，透出桌面能强化空间感，且不承载长文本。
+ *   L2  编辑区88% 不透明
+ *       正文是唯一需要长时间阅读的内容。透出壁纸等于让对比度
+ *       随桌面壁纸变化，不可预测。因此编辑区只保留极轻微的透，
+ *       用不透明度换可读性 —— 这一条不能为了「更炫」而改。
+ *   L3  浮层 / 弹窗 / 命令面板   blur 32px saturate 200%
+ *       浮层必须与下层内容明确分离，模糊越强边界越清晰。
+ *       代价是 macOS 上大面积毛玻璃掉帧严重，故仅用于小面积。
+ *
+ * ★ 降级为什么用 CSS 选择器而不是 JS 判断 ★
+ *   GlassMode 由 Rust 侧探测后写到 <html data-glass="...">，
+ *   之后所有分支由选择器接管。好处：
+ *   1. 切换玻璃模式不触发任何 Vue 更新，零重渲染；
+ *   2. 降级逻辑集中在本文件，不散落在各组件的 if 里；
+ *   3. 系统「降低透明度」开关变化时，媒体查询能立即接管，
+ *      不需要前端轮询或监听原生事件。
+ *
+ * ★ 为什么用 rgb(通道 / alpha) 而不是 color-mix ★
+ *   color-mix 里写 calc(百分比) 在旧版 WKWebView 上会整条声明失效，
+ *   失效后背景变成透明，编辑区直接透出桌面 —— 是最坏的失败形态。
+ *   rgb(通道 / 透明度) 从 CSS3 时代就稳定支持，失败时不会静默。
+ *   代价是每个主题要额外声明一组通道值，见 themes.css。
+ * ============================================================ */
+
+/* ── 层容器 ────────────────────────────────────────────────
+ * 用 class 而不是组件内联样式：玻璃参数一旦内联，
+ * 降级时就无法用选择器覆盖（内联样式优先级更高）。 */
+
+/* L1：侧边栏、AI 面板 */
+.glass-l1 {
+  position: relative;
+  background: rgb(var(--c-bg-rgb) / var(--glass-l1-alpha));
+  backdrop-filter: blur(var(--glass-l1-blur)) saturate(var(--glass-l1-sat));
+  -webkit-backdrop-filter: blur(var(--glass-l1-blur)) saturate(var(--glass-l1-sat));
+  border-right: 1px solid var(--glass-border);
+}
+
+/* L2：编辑区。可读性优先，默认接近不透明 */
+.glass-l2 {
+  position: relative;
+  background: rgb(var(--c-bg-rgb) / var(--glass-l2-alpha));
+  backdrop-filter: blur(8px) saturate(120%);
+  -webkit-backdrop-filter: blur(8px) saturate(120%);
+}
+
+/* L3：浮层、弹窗、命令面板 */
+.glass-l3 {
+  background: rgb(var(--c-bg-rgb) / var(--glass-l3-alpha));
+  backdrop-filter: blur(var(--glass-l3-blur)) saturate(var(--glass-l3-sat));
+  -webkit-backdrop-filter: blur(var(--glass-l3-blur)) saturate(var(--glass-l3-sat));
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+}
+
+/* ============================================================
+ * 降级一：vibrancy（旧系统 NSVisualEffectView）
+ *
+ * 旧系统的 vibrancy 本身已经模糊过背景，再叠一层 CSS blur
+ * 只会让颜色发灰发浑。因此不是「同样效果」，而是主动降低
+ * 模糊与饱和度，把预算留给原生层。
+ * ============================================================ */
+html[data-glass='vibrancy'] {
+  --glass-l1-blur: 14px;
+  --glass-l1-sat: 140%;
+  --glass-l3-blur: 20px;
+  --glass-l3-sat: 150%;
+  /* 原生已模糊，前端就该少透一点，否则内容会「化」掉 */
+  --glass-l1-alpha: 0.82;
+  --glass-l3-alpha: 0.9;
+}
+
+/* ============================================================
+ * 降级二：none（不支持 / 强制不透明）
+ *
+ * 关键：必须换成完全不透明表面，不能留半透明。
+ * 半透明 + 无模糊 = 直接透出桌面图标，视觉上等同于坏掉。
+ * 此时改用「阴影 + 描边」表达层次，这是唯一在无模糊下
+ * 仍然清晰可辨的层次手段。
+ * ============================================================ */
+html[data-glass='none'] {
+  --glass-l1-blur: 0px;
+  --glass-l1-sat: 100%;
+  --glass-l3-blur: 0px;
+  --glass-l3-sat: 100%;
+  --glass-l1-alpha: 1;
+  --glass-l2-alpha: 1;
+  --glass-l3-alpha: 1;
+}
+
+html[data-glass='none'] .glass-l1,
+html[data-glass='none'] .glass-l2,
+html[data-glass='none'] .glass-l3 {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+/* 描边与阴影加强：无模糊时层次只能靠这两个手段表达 */
+html[data-glass='none'] .glass-l1 {
+  border-right-color: var(--border-strong);
+}
+
+html[data-glass='none'] .glass-l3 {
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow-lg), var(--shadow-md);
+}
+
+/* AI 面板与侧边栏同层，但需与编辑区区分，抬高一档表面 */
+html[data-glass='none'] .glass-l1--raised {
+  background: var(--bg-raised);
+}
+
+/* ============================================================
+ * 逃生通道：强制不透明
+ *
+ * 与 data-glass='none' 分离成独立属性，因为它可能叠加在
+ * 任意 glass 模式之上（用户不关玻璃，只是不想要半透明）。
+ * ============================================================ */
+html[data-force-opaque='true'] {
+  --glass-l1-alpha: 1;
+  --glass-l2-alpha: 1;
+  --glass-l3-alpha: 1;
+}
+
+html[data-force-opaque='true'] .glass-l1,
+html[data-force-opaque='true'] .glass-l2,
+html[data-force-opaque='true'] .glass-l3 {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+/* ============================================================
+ * 系统「降低透明度」
+ *
+ * CSS 媒体查询直接接管，无需前端监听。
+ * 这是唯一可靠的即时响应路径：原生层的开关变化没有事件可订阅。
+ * !important 是必要的：此处必须压过组件自身的背景声明。
+ * ============================================================ */
+@media (prefers-reduced-transparency: reduce) {
+  .glass-l1,
+  .glass-l2,
+  .glass-l3 {
+    background: var(--bg-base) !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+}
+
+/* ============================================================
+ * 浏览器内预览（无 Tauri 原生层）
+ *
+ * 纯 backdrop-filter 在浏览器里只能模糊「同一文档内」的元素，
+ * 后面是白色 html 底色，模糊等于没做，颜色会显得脏。
+ * 因此浏览器下走不透明路径 —— 这不是降级，这是本来就没有玻璃。
+ * ============================================================ */
+html[data-runtime='browser'] {
+  --glass-l1-alpha: 1;
+  --glass-l2-alpha: 1;
+  --glass-l3-alpha: 1;
+}
+
+html[data-runtime='browser'] .glass-l1,
+html[data-runtime='browser'] .glass-l2,
+html[data-runtime='browser'] .glass-l3 {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}

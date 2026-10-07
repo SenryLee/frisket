@@ -1,0 +1,215 @@
+/* ============================================================
+ * sidebar.css —— 文档历史栏的样式
+ *
+ * 在整体中的位置：从 Sidebar.vue 拆出，
+ * 因为该组件的 script + template 已接近 300 行上限。
+ *
+ * 为什么不用 <style scoped>：这里的类名全部以 sidebar__ 前缀
+ * 命名，天然不会与其它组件冲突。放进全局样式省掉编译期为每个
+ * 选择器附加 data-v 属性的开销，也让未来的 OutlinePanel
+ * 能复用同一套行样式。
+ *
+ * ★ 宽度与折叠过渡不在本文件 ★
+ * 由 App.vue 的 .app__sidebar-slot 独占。两处同时动画 width
+ * 会互相覆盖，且动画中途的实际宽度不可预测。
+ * ============================================================ */
+
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  /* 用 overflow:hidden 而非 display:none 折叠：
+   * display:none 会让侧栏里的按钮瞬间失焦，
+   * 键盘用户会「丢失焦点位置」，这是明确的 a11y 缺陷。 */
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.sidebar__header {
+  display: flex;
+  align-items: center;
+  height: var(--toolbar-height);
+  padding: 0 var(--space-5);
+  flex-shrink: 0;
+}
+
+.sidebar__heading {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-secondary);
+  letter-spacing: 0.02em;
+}
+
+.sidebar__body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  /* 滚到底不把滚动事件传给外层，避免连带整页滚动 */
+  overscroll-behavior: contain;
+}
+
+.sidebar__list {
+  margin: 0;
+  padding: 0 var(--space-3) var(--space-4);
+  list-style: none;
+}
+
+.sidebar__item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-sm);
+  text-align: left;
+  transition: background var(--dur-fast-eff) var(--ease-out);
+}
+
+.sidebar__item:hover {
+  background: var(--bg-hover);
+}
+
+.sidebar__item.is-active {
+  background: var(--bg-selected);
+}
+
+.sidebar__item.is-active .sidebar__item-title {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.sidebar__item-top,
+.sidebar__item-bottom {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  /* min-width:0 是 truncate 生效的前提：
+   * flex 子项默认 min-width:auto，不写这行长文本不会收缩 */
+  min-width: 0;
+}
+
+.sidebar__item-title {
+  flex: 1;
+  font-size: var(--text-base);
+  color: var(--text-primary);
+}
+
+.sidebar__item-time {
+  flex-shrink: 0;
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+
+.sidebar__item-preview {
+  flex: 1;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.sidebar__item-count {
+  flex-shrink: 0;
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 让视口外的行跳过渲染：比虚拟化简单，且不产生行高跳变 */
+.sidebar__list > li {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 52px;
+}
+
+/* ── 空态 ────────────────────────────────────────────────────
+ * 加载中/失败/无数据三态共用一个容器，靠内部元素区分。 */
+.sidebar__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-9) var(--space-5);
+  text-align: center;
+}
+
+.sidebar__empty-icon {
+  color: var(--text-muted);
+  margin-bottom: var(--space-2);
+}
+
+.sidebar__empty-text {
+  font-size: var(--text-base);
+  color: var(--text-secondary);
+}
+
+.sidebar__empty-hint {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.sidebar__empty-action {
+  margin-top: var(--space-2);
+  padding: var(--space-2) var(--space-5);
+  border-radius: var(--radius-sm);
+  background: var(--accent);
+  color: var(--accent-contrast);
+  font-size: var(--text-sm);
+  transition: background var(--dur-fast-eff) var(--ease-out);
+}
+
+.sidebar__empty-action:hover {
+  background: var(--accent-hover);
+}
+
+.sidebar__skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-5);
+}
+
+.sidebar__skeleton-row {
+  height: 40px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-hover);
+  animation: sidebar-pulse 1.4s var(--ease-in-out) infinite;
+}
+
+@keyframes sidebar-pulse {
+  0%,
+  100% {
+    opacity: 0.5;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* 减弱动态效果时骨架屏改为静态低透明度。
+   不能用 animation:none —— 那会让加载完成的瞬间
+   骨架突然消失，产生一次突兀的跳变。 */
+@media (prefers-reduced-motion: reduce) {
+  .sidebar__skeleton-row {
+    animation: none;
+    opacity: 0.6;
+  }
+}
+
+.sidebar__footer {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  height: var(--statusbar-height);
+  padding: 0 var(--space-5);
+  border-top: 1px solid var(--border-subtle);
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.sidebar__footer-path {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  max-width: 50%;
+  /* rtl 让路径从右侧起截断，长路径优先显示文件名末尾 */
+  direction: rtl;
+  text-align: right;
+}

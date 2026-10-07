@@ -1,0 +1,45 @@
+{
+  "name": "slate",
+  "version": "0.1.0",
+  "description": "本地离线 Markdown 编辑器",
+  "type": "module",
+  "private": true,
+  "license": "MIT",
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "vue-tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "playwright test",
+    "test:gate": "playwright test tests/e2e/cls.spec.ts tests/e2e/ime.spec.ts",
+    "tauri": "tauri",
+    "app:dev": "tauri dev",
+    "app:build": "tauri build"
+  },
+  "dependencies": {
+    "@codemirror/autocomplete": "6.20.3",
+    "@codemirror/commands": "6.11.1",
+    "@codemirror/lang-markdown": "6.5.2",
+    "@codemirror/language": "6.12.4",
+    "@codemirror/lint": "6.9.7",
+    "@codemirror/search": "6.7.2",
+    "@codemirror/state": "6.7.6",
+    "@codemirror/view": "6.43.13",
+    "@lezer/highlight": "1.2.5",
+    "@tauri-apps/api": "2.12.1",
+    "vue": "3.5.22"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.56.1",
+    "@tauri-apps/cli": "2.12.1",
+    "@types/node": "22.18.11",
+    "@vitejs/plugin-vue": "6.0.1",
+    "@vue/test-utils": "2.4.6",
+    "typescript": "5.9.3",
+    "vite": "7.1.9",
+    "vitest": "3.2.4",
+    "vue-tsc": "3.1.1"
+  }
+}

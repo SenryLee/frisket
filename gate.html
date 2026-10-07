@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="ink" data-glass="none" data-runtime="browser">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Slate 门禁入口</title>
+  </head>
+  <body>
+    <!--
+      门禁专用入口 —— 不是应用的正式首页。
+
+      为什么需要独立入口：门禁要断言的是「编辑器的布局与输入行为」，
+      若挂在正式 App 上，视觉层的任何改动都可能让门禁失败，而失败原因
+      与门禁要测的东西无关 —— 这是最耗时间的假失败来源。
+
+      这个页面只挂内核，不挂 UI，因此门禁失败必然指向内核。
+
+      装配顺序不能反：先 addEventListener(slate:editor-host-ready)，
+      再派发 hostReady。内核收到后创建 CM 并派发 slate:editor-ready。
+      反了会静默丢事件（详见 src/core/protocol.ts 的顺序契约）。
+    -->
+    <div id="editor-host"></div>
+
+    <script type="module">
+      import { createEditor } from '/src/core/editor.ts'
+      import { SLATE_EVENT } from '/src/core/protocol.ts'
+      import '/src/styles/index.css'
+
+      const host = document.getElementById('editor-host')
+      let editor = null
+
+      // 先监听，再派发 —— 顺序是契约的一部分
+      window.addEventListener(SLATE_EVENT.hostReady, (event) => {
+        if (editor) return
+        const mountPoint = event.detail
+        editor = createEditor({ parent: mountPoint, initialDoc: '' })
+
+        // 门禁通道：仅 dev 构建挂载，prod 由 import.meta.env.DEV 静态剔除。
+        // devControls 让 qa 能精确设置文档/选区/焦点并读 IME 组合状态，
+        // 无需内核为测试写专用分支。
+        window.__slate = {
+          ready: () => true,
+          setDoc: (text) => editor.setDoc(text),
+          getDoc: () => editor.getDoc(),
+          setSelection: (from, to) => editor.setSelection({ from, to: to ?? from }),
+          setCursor: (offset) => editor.setSelection({ from: offset, to: offset }),
+          focus: () => editor.focus(),
+          isComposing: () => editor.view.composing,
+          // 主题切换属视觉层职责，gate.html 不挂 App.vue，所以在此直接切
+          // dataset.theme —— 与 store/appearance.ts 的机制一致（零 dispatch）。
+          toggleTheme: (themeId) => {
+            const THEMES = ['ink', 'graphite', 'sepia', 'neon-glass']
+            const current = document.documentElement.dataset.theme ?? 'ink'
+            const next =
+              themeId ??
+              THEMES[(THEMES.indexOf(current) + 1) % THEMES.length]
+            document.documentElement.dataset.theme = next
+            return next
+          },
+          // 同样属视觉层：gate.html 没有 AI 面板，但组合期重算会被触发，
+          // 这里用一个等价的副作用模拟「发生了一次外部干预」。
+          toggleAiPanel: () => {
+            const host = document.getElementById('editor-host')
+            host?.toggleAttribute('data-panel-toggled')
+            return host?.hasAttribute('data-panel-toggled') ?? false
+          },
+        }
+
+        window.dispatchEvent(new CustomEvent(SLATE_EVENT.ready, { detail: { handle: editor } }))
+        window.__editorReady = true
+      })
+
+      window.dispatchEvent(new CustomEvent(SLATE_EVENT.hostReady, { detail: host }))
+    </script>
+  </body>
+</html>

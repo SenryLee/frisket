@@ -1,0 +1,39 @@
+# 依赖
+node_modules/
+.pnpm-store/
+
+# 构建产物
+dist/
+dist-ssr/
+src-tauri/target/
+src-tauri/gen/
+
+# 环境与密钥（重要：绝不入库）
+.env
+.env.local
+*.local
+*.pem
+*.key
+
+# 编辑器与系统
+.DS_Store
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.swp
+*~
+
+# 测试与工具缓存
+coverage/
+playwright-report/
+test-results/
+.playwright/
+.pw-browsers/
+.vite/
+*.tsbuildinfo
+
+# 快照基线（M0 验收通过后再提交，先不入库）
+# 用** 递归匹配，因为 vitest 会在每个测试文件同级生成 __snapshots__ 目录。
+# 漏掉任何一层都会让快照被误提交，而未经人工 review 的快照会把错误的
+# 渲染结果固化成「基准」—— 那比没有快照更危险。
+tests/**/__snapshots__/

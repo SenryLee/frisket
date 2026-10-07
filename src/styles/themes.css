@@ -1,0 +1,221 @@
+/* ============================================================
+ * themes.css —— 四套内置主题
+ *
+ * 在整体中的位置：tokens.css 定义语义名，本文件提供语义名背后的原色。
+ * 组件不感知本文件的存在。
+ *
+ * ★ 零 dispatch 切换 ★
+ * 切换主题只做一件事：document.documentElement.dataset.theme = 'x'
+ * 浏览器随即重算 CSS 变量。没有事件、没有 diff、没有组件重渲染，
+ * 因此不存在「切换瞬间闪一下旧主题」，也不需要重建 CodeMirror。
+ * CodeMirror 的 theme 与 HighlightStyle 同样只写 var() 引用，
+ * 两侧由同一次样式重算完成同步。
+ * ============================================================ */
+
+/* ── Ink · 亮色暖纸白墨黑 ──────────────────────────────────
+ * 取色理由：
+ *   底色 #FBFAF7 略带黄的纸白，比纯白 #FFF 少一层刺眼感，
+ *   长时间写作时纯白底对比度过高（WCAG 对比度 21:1 过冲）。
+ *   强调色 #2F6FEB 是偏冷的蓝，与纸黄的底色形成冷暖对比，
+ *   在暖色纸上看起来不脏；纯 #0000FF 太刺眼、太像链接。
+ *   代码色 #B5446E 用玫红而非蓝色：代码与链接必须一眼可分，
+ *   若同为蓝色系，读者需靠形状（等宽/括号）二次辨认。 */
+html[data-theme='ink'] {
+  --c-bg-base: #fbfaf7;
+  /* 与 --c-bg-base 同值的通道形式，专供 glass.css 的 rgb(R / alpha) 用。
+   * 之所以不用 color-mix 现场混色：见 glass.css 顶部说明。 */
+  --c-bg-rgb: 251 250 247;
+  --c-bg-raised: #ffffff;
+  --c-bg-overlay: #ffffff;
+  --c-bg-sunken: #f2efe8;
+  --c-bg-hover: #f0ede5;
+  --c-bg-active: #e8e4d9;
+  --c-bg-selected: #e4edfd;
+
+  --c-text-primary: #1a1a1a;
+  --c-text-secondary: #55524b;
+  --c-text-muted: #8b867c;
+  --c-text-inverse: #fbfaf7;
+
+  --c-accent: #2f6feb;
+  --c-accent-hover: #1f5ad0;
+  --c-accent-muted: #dbe7fd;
+  --c-accent-contrast: #ffffff;
+  --c-accent2: #b5446e;
+
+  --c-border: #e3ded2;
+  --c-border-strong: #cdc6b6;
+  --c-border-subtle: #eeebe2;
+
+  --c-code: #b5446e;
+  --c-danger: #c0392b;
+  --c-warning: #a86a12;
+  --c-success: #2f7a4d;
+
+  --c-shadow: rgb(58 50 36 / 0.09);
+  --c-shadow-strong: rgb(58 50 36 / 0.17);
+
+  --c-glass-border: rgb(255 255 255 / 0.7);
+  --c-glass-shadow: rgb(58 50 36 / 0.1);
+
+  color-scheme: light;
+}
+
+/* ── Graphite · 暗色石墨灰 ──────────────────────────────────
+ * 取色理由：
+ *   底色 #1C1C1E 带一点冷紫倾向，纯 #000 在长时间注视下更累，
+ *   且 OLED 上纯黑与系统窗口黑边不一致，视觉上像「贴了一块黑胶布」。
+ *   文字 #E8E6E3 不用纯白：纯白在暗底上产生光晕（halation），
+ *   略微压低亮度可显著减轻。
+ *   强调色 #7AB8FF 提亮到 70%+ 亮度，暗底上低亮度蓝会糊成一团。
+ *   代码色 #FF9EBB 与强调色同属冷色但不同色相，保持可区分。 */
+html[data-theme='graphite'] {
+  --c-bg-base: #1c1c1e;
+  --c-bg-rgb: 28 28 30;
+  --c-bg-raised: #262629;
+  --c-bg-overlay: #2e2e32;
+  --c-bg-sunken: #151517;
+  --c-bg-hover: #303034;
+  --c-bg-active: #3a3a3f;
+  --c-bg-selected: #2b3f5e;
+
+  --c-text-primary: #e8e6e3;
+  --c-text-secondary: #a9a6a1;
+  --c-text-muted: #75726e;
+  --c-text-inverse: #1c1c1e;
+
+  --c-accent: #7ab8ff;
+  --c-accent-hover: #a3ccff;
+  --c-accent-muted: #23384f;
+  --c-accent-contrast: #10243a;
+  --c-accent2: #ff9ebb;
+
+  --c-border: #35353a;
+  --c-border-strong: #4a4a51;
+  --c-border-subtle: #28282c;
+
+  --c-code: #ff9ebb;
+  --c-danger: #ff7a6e;
+  --c-warning: #e0b055;
+  --c-success: #6ed49a;
+
+  --c-shadow: rgb(0 0 0 / 0.4);
+  --c-shadow-strong: rgb(0 0 0 / 0.62);
+
+  --c-glass-border: rgb(255 255 255 / 0.09);
+  --c-glass-shadow: rgb(0 0 0 / 0.5);
+
+  color-scheme: dark;
+}
+
+/* ── Sepia · 暖米色 ─────────────────────────────────────────
+ * 取色理由：
+ *   底色 #F5EFE1 比 Ink 更黄更暗，是长时间阅读的舒适区。
+ *   强调色 #A8542A 用赭石橙而非蓝：蓝在米黄底上会显脏，
+ *   且橙色与「编辑/标记」的语义直觉一致（像荧光笔）。
+ *   代码色同样走暖色系 #8A5A2B，与强调色靠明度而非色相区分。 */
+html[data-theme='sepia'] {
+  --c-bg-base: #f5efe1;
+  --c-bg-rgb: 245 239 225;
+  --c-bg-raised: #fbf7ec;
+  --c-bg-overlay: #fffdf7;
+  --c-bg-sunken: #ece4d2;
+  --c-bg-hover: #efe8d8;
+  --c-bg-active: #e5dcc8;
+  --c-bg-selected: #f0e2cc;
+
+  --c-text-primary: #3b3229;
+  --c-text-secondary: #6b5f4f;
+  --c-text-muted: #988b78;
+  --c-text-inverse: #f5efe1;
+
+  --c-accent: #a8542a;
+  --c-accent-hover: #8d4423;
+  --c-accent-muted: #f0dfd0;
+  --c-accent-contrast: #fffaf3;
+  --c-accent2: #4a6b8a;
+
+  --c-border: #ded3bd;
+  --c-border-strong: #c6b99f;
+  --c-border-subtle: #e9e0cc;
+
+  --c-code: #8a5a2b;
+  --c-danger: #a63a2a;
+  --c-warning: #8f6a1a;
+  --c-success: #4a7346;
+
+  --c-shadow: rgb(74 58 32 / 0.1);
+  --c-shadow-strong: rgb(74 58 32 / 0.19);
+
+  --c-glass-border: rgb(255 253 247 / 0.7);
+  --c-glass-shadow: rgb(74 58 32 / 0.11);
+
+  color-scheme: light;
+}
+
+/* ── Neon Glass · 招牌主题 ──────────────────────────────────
+ * 「美观第一」的一版：深底 + 高饱和青/紫双色发光。
+ *
+ * 取色理由：
+ *   底色 #0B0D12 比 Graphite 更黑更蓝，给发光色留出对比空间。
+ *   主色 #7DF9C7 青绿、副色 #C77DFF 紫，一冷一暖构成互补，
+ *   在暗底上两者都能达到足够亮度而不刺眼。
+ *   圆角整体放大（--radius-lg 20px），玻璃透明度提高，
+ *   让「层次」本身成为视觉主体 —— 这是本主题存在的意义。
+ *   正文色不用纯白而用 #E4EDF5，略偏青，与主色同族但不刺眼。 */
+html[data-theme='neon-glass'] {
+  --c-bg-base: #0b0d12;
+  --c-bg-rgb: 11 13 18;
+  --c-bg-raised: #131722;
+  --c-bg-overlay: #1a2030;
+  --c-bg-sunken: #070910;
+  --c-bg-hover: #1c2333;
+  --c-bg-active: #263048;
+  --c-bg-selected: #1d3b4d;
+
+  --c-text-primary: #e4edf5;
+  --c-text-secondary: #9fb0c4;
+  --c-text-muted: #64748b;
+  --c-text-inverse: #0b0d12;
+
+  --c-accent: #7df9c7;
+  --c-accent-hover: #a4ffd9;
+  --c-accent-muted: #14332c;
+  --c-accent-contrast: #06231c;
+  --c-accent2: #c77dff;
+
+  --c-border: #232b3d;
+  --c-border-strong: #364159;
+  --c-border-subtle: #1a2130;
+
+  --c-code: #7df9c7;
+  --c-danger: #ff6b8a;
+  --c-warning: #ffd166;
+  --c-success: #7df9c7;
+
+  --c-shadow: rgb(0 0 0 / 0.55);
+  --c-shadow-strong: rgb(0 0 0 / 0.78);
+
+  --c-glass-border: rgb(125 249 199 / 0.16);
+  --c-glass-shadow: rgb(0 0 0 / 0.6);
+
+  /* 发光：仅本主题使用，招牌效果的来源 */
+  --glow-accent: 0 0 18px rgb(125 249 199 / 0.35);
+  --glow-accent2: 0 0 18px rgb(199 125 255 / 0.35);
+
+  /* 玻璃更透、圆角更大 —— 与其他三套主题形成明确的性格差异 */
+  --glass-l1-alpha: 0.5;
+  --glass-l2-alpha: 0.84;
+  --glass-l3-alpha: 0.66;
+
+  color-scheme: dark;
+}
+
+/* Neon Glass 的圆角与通透度覆盖。
+ * 其他三套主题不需要声明任何圆角变量 —— 默认值本身就在 tokens.css，
+ * 这样「Neon Glass 是特例」这件事在代码里一目了然。 */
+html[data-theme='neon-glass'] {
+  --radius-lg: 20px;
+  --radius-xl: 26px;
+  --radius-md: 10px;
+}

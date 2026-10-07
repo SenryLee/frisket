@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>CLS 探针自验证 harness</title>
+<style>
+  /*
+    为什么要这个文件：
+    一套「断言 CLS < 0.01」的测试，如果探针本身是坏的，它会永远绿。
+    所以必须有一个**已知会抖**的页面来证明探针抓得到偏移。
+
+    这里的实现是故意写错的 —— 用 block widget 替换整块渲染，
+    正是竞品 atomic-editor 在 CLS ≈ 0.1 时的做法。
+    断言写成「必须测出偏移」：跑通了说明工具有效；
+    跑不通说明工具坏了。不存在「假通过」的空间。
+  */
+  body {
+    margin: 0;
+    font-family: -apple-system, "PingFang SC", sans-serif;
+    font-size: 16px;
+    line-height: 1.6;
+  }
+  #editor {
+    /* 固定高度：抖动的唯一来源必须是块替换，而不是容器尺寸变化 */
+    height: 400px;
+    overflow: auto;
+    border: 1px solid #ccc;
+    padding: 8px;
+  }
+  .line {
+    /* 行高由行 class 决定，符合项目 CSS 铁律 */
+    padding: 2px 4px;
+  }
+  .block-widget {
+    /* 故意加纵向 padding：block widget 展开时会把下方内容顶下去，
+       这正是 atomic-editor 抖动的成因 */
+    padding: 10px 14px;
+    background: #eef;
+    border-left: 3px solid #567;
+  }
+  .marker-hidden {
+    /*
+      正确实现的样子：标记占据零宽且不可见。
+      为什么不用 display:none —— 那会让后面的文字横向移动，
+      依然是布局偏移。用零宽盒子把标记「压掉」才真正不产生位移，
+      这也正是项目要求 decoration 只做行内替换的原因。
+    */
+    display: inline-block;
+    width: 0;
+    height: 0;
+    overflow: hidden;
+    vertical-align: baseline;
+    opacity: 0;
+  }
+  .hint {
+    padding: 8px;
+    font-size: 13px;
+    color: #666;
+  }
+</style>
+</head>
+<body>
+  <p class="hint">
+    自验证页面：<code>?mode=block-widget</code> 制造已知偏移，
+    <code>?mode=inline</code> 是正确实现的对照。
+  </p>
+  <div id="editor"></div>
+
+<script type="module">
+/**
+ * 自验证 harness
+ *
+ * 不引入 CodeMirror：这段代码唯一要证明的是「CLS 探针能捕捉到布局偏移」，
+ * 与编辑器实现无关。用真实 CM 反而会引入「这段抖动是 CM 的问题还是探针的问题」
+ * 的归因歧义。CM 本身的验证在 e2e/cls.spec.ts 里做。
+ */
+
+const params = new URLSearchParams(location.search)
+const mode = params.get('mode') === 'inline' ? 'inline' : 'block-widget'
+
+const editor = document.getElementById('editor')
+
+const lines = [
+  '## 标题行',
+  '普通段落，包含 **粗体** 与 *斜体*。',
+  '> 引用块内容。',
+  '- 列表项一',
+  '- 列表项二',
+  '普通段落，包含 `行内代码`。',
+  '结尾段落。',
+]
+
+/**
+ * 渲染。
+ *
+ * mode=block-widget：把整行替换成带 padding 的块 —— 展开/折叠时下方内容位移很大。
+ * mode=inline：只把标记本身 inline 隐藏掉，行高不变 —— 不产生偏移。
+ *
+ * 关键实现约束（踩过的坑）：
+ * **不能整树重建 DOM。**
+ * layout-shift 只统计「上一帧存在、这一帧移动了」的元素。
+ * 若每次 render 都 replaceChildren() 重建全部节点，
+ * 新节点在上一帧根本不存在，就没有「原位置」，永远不产生 layout-shift ——
+ * 探针会测出 CLS = 0，看起来像「布局很稳」，实际是根本没发生位移事件。
+ *
+ * 这正是 CodeMirror 的做法差异：它复用 DOM，只改 class 与 decoration 范围。
+ * 所以这里也必须复用节点，只增删必要的子节点。
+ *
+ * @param {number} activeIndex 处于「展开」状态的行号，其余为「折叠」
+ */
+function render(activeIndex) {
+  // 行容器只创建一次，后续复用
+  if (editor.children.length === 0) {
+    lines.forEach((_text, index) => {
+      const line = document.createElement('div')
+      line.className = 'line'
+      line.dataset.index = String(index)
+      // 行高探针靠这个标签识别行。必须有且稳定：
+      // 探针要比较「同一行在展开/折叠两种状态下的高度」，
+      // 标签若随状态变化就无从比较。
+      line.setAttribute('data-lh-label', `line-${index}`)
+      editor.appendChild(line)
+    })
+  }
+
+  lines.forEach((text, index) => {
+    const line = editor.children[index]
+    if (!line) return
+
+    if (mode === 'block-widget') {
+      // 错误做法：整块替换成 widget。
+      const wantWidget = index === activeIndex
+      const hasWidget = line.querySelector('.block-widget') !== null
+      const hasPlainText = line.textContent === text && !hasWidget
+
+      if (wantWidget && !hasWidget) {
+        // 复用行节点，只把内容换成 widget —— 行节点本身不移动，
+        // 位移的是它的高度以及它下方所有行的位置。
+        line.replaceChildren()
+        const widget = document.createElement('div')
+        widget.className = 'block-widget'
+        widget.textContent = text
+        line.appendChild(widget)
+      } else if (!wantWidget && hasWidget) {
+        // 折叠：把 widget 换回纯文本
+        line.replaceChildren()
+        line.appendChild(document.createTextNode(text))
+      } else if (!wantWidget && !hasPlainText) {
+        line.replaceChildren()
+        line.appendChild(document.createTextNode(text))
+      }
+    } else {
+      // 正确做法：行内替换标记。两种状态下 DOM 结构完全一致，
+      // 因此不存在任何位移。
+      const key = `inline:${text}`
+      if (line.dataset.renderKey === key) return
+      line.dataset.renderKey = key
+      line.replaceChildren()
+      const parts = text.split(/(\*\*|##|>|`)/)
+      for (const part of parts) {
+        if (part === '**' || part === '##' || part === '>' || part === '`') {
+          const span = document.createElement('span')
+          span.className = 'marker-hidden'
+          span.textContent = part
+          line.appendChild(span)
+        } else if (part.length > 0) {
+          line.appendChild(document.createTextNode(part))
+        }
+      }
+    }
+  })
+}
+
+/** 挂到window，供 Playwright 驱动。 */
+window.harness = {
+  mode,
+  /** 模拟「光标移入某个语法元素内部」。 */
+  enter(index) {
+    render(index)
+  },
+  /** 模拟「光标移出」。 */
+  exit() {
+    render(-1)
+  },
+  /** 当前 mode，供测试确认走的是预期分支。 */
+  currentMode() {
+    return mode
+  },
+}
+
+render(-1)
+window.__harnessReady = true
+</script>
+</body>
+</html>

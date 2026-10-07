@@ -1,0 +1,210 @@
+/* ============================================================
+ * tokens.css —— 与主题无关的结构性设计变量
+ *
+ * 在整体中的位置：
+ *   base.css    元素级 reset、字体栈、滚动条
+ *   tokens.css  ← 本文件：字号/间距/圆角/动效/层级等结构 token
+ *   themes.css  四套主题的颜色与圆角覆盖（唯一的颜色来源）
+ *   glass.css   玻璃三层与降级
+ *
+ * 为什么颜色不在本文件：颜色必须整组切换，若拆成「结构一份、颜色一份」，
+ * 加主题时要在两个文件里各改一次，容易漏。本文件因此只放「换主题不变」的部分，
+ * 新增主题只需在 themes.css 增加一个块，不必回头动这里。
+ * ============================================================ */
+
+:root {
+  /* ── 字体栈 ────────────────────────────────────────────────
+   * 不引入 Web Font：离线优先是产品硬约束，且中文 Web Font 体积过大。
+   * 系统字体在 macOS 上恰好是 San Francisco / 苹方，观感最好。 */
+  --font-ui: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue',
+    'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  --font-mono: 'SF Mono', 'JetBrains Mono', Menlo, Consolas, 'Liberation Mono',
+    'PingFang SC', monospace;
+
+  /* 编辑区排版：由 EditorPrefs 驱动，内核的 CodeMirror 主题只引用不定义 */
+  --font-editor-family: var(--font-ui);
+  --font-editor-size: 16px;
+  --line-height-editor: 1.75;
+  /* 0 表示不限宽；正文字数 = 字号 × 该值。
+   * 不限时不能用 0ch —— 那会让正文宽度塌成 0。
+   * 900ch 远超任何窗口宽度，视觉上等同不限。 */
+  --measure-editor-unlimited: 900ch;
+  --measure-editor: var(--measure-editor-unlimited);
+
+  /* ── 字号阶梯 ──────────────────────────────────────────────
+   * 界面用13px 起步：桌面端编辑器工具栏密集，更小会显得廉价。 */
+  --text-2xs: 10px;
+  --text-xs: 11px;
+  --text-sm: 12px;
+  --text-base: 13px;
+  --text-md: 14px;
+  --text-lg: 16px;
+  --text-xl: 20px;
+  --text-2xl: 26px;
+
+  /* ── 间距阶梯（4px 基准）────────────────────────────────── */
+  --space-0: 0;
+  --space-1: 2px;
+  --space-2: 4px;
+  --space-3: 6px;
+  --space-4: 8px;
+  --space-5: 12px;
+  --space-6: 16px;
+  --space-7: 20px;
+  --space-8: 24px;
+  --space-9: 32px;
+
+  /* ── 圆角 ──────────────────────────────────────────────────
+   * 语义名而非尺寸名：组件只该关心「这是卡片还是按钮」。 */
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-full: 999px;
+
+  /* ── 控件尺寸（随密度变化）───────────────────────────────── */
+  --control-height: 26px;
+  --control-height-sm: 22px;
+  --row-height: 28px;
+  --titlebar-height: 38px;
+  --statusbar-height: 24px;
+  --toolbar-height: 38px;
+  --sidebar-width: 240px;
+  --sidebar-width-collapsed: 0px;
+  --ai-panel-width: 380px;
+
+  /* ── 动效 ──────────────────────────────────────────────────
+   * --dur-* 是「名义时长」，实际时长再乘 --motion-scale。
+   * 这样 motionScale=0 能一处关掉全部动画，不需要给每处写判断。 */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-spring: cubic-bezier(0.34, 1.4, 0.64, 1);
+  --dur-fast: 120ms;
+  --dur-base: 180ms;
+  --dur-panel: 260ms;
+  --motion-scale: 1;
+
+  --dur-fast-eff: calc(var(--dur-fast) * var(--motion-scale));
+  --dur-base-eff: calc(var(--dur-base) * var(--motion-scale));
+  --dur-panel-eff: calc(var(--dur-panel) * var(--motion-scale));
+
+  /* ── 层级 ──────────────────────────────────────────────────
+   * 只暴露语义层，组件不写裸z-index，避免互相压盖后无从排查。 */
+  --z-base: 0;
+  --z-sticky: 10;
+  --z-panel: 20;
+  --z-float: 30;
+  --z-modal: 40;
+  --z-toast: 50;
+
+  /* ── 焦点环 ────────────────────────────────────────────────
+   * 统一变量：键盘导航必须处处可见，这是无障碍底线。 */
+  --focus-ring-width: 2px;
+  --focus-ring-offset: 2px;
+}
+
+/* ============================================================
+ * 语义层颜色
+ *
+ * 组件一律只用这里的语义名（--bg-base / --text-primary …），
+ * 不直接引用 --c-* 原色。原色由 themes.css 按主题整组替换。
+ *
+ * 为什么要分两层：直接写 #1A1A1A 的组件在换主题时必然漏改；
+ * 分成「原色 → 语义名」后，换主题只动 themes.css 一个文件，
+ * 且新增主题不必回头检查任何组件。
+ * ============================================================ */
+
+:root {
+  /* 表面：从最底层到最上层，越靠上层越亮（暗色主题相反） */
+  --bg-base: var(--c-bg-base);
+  --bg-raised: var(--c-bg-raised);
+  --bg-overlay: var(--c-bg-overlay);
+  --bg-sunken: var(--c-bg-sunken);
+  --bg-hover: var(--c-bg-hover);
+  --bg-active: var(--c-bg-active);
+  --bg-selected: var(--c-bg-selected);
+
+  /* 文字 */
+  --text-primary: var(--c-text-primary);
+  --text-secondary: var(--c-text-secondary);
+  --text-muted: var(--c-text-muted);
+  --text-inverse: var(--c-text-inverse);
+  --text-accent: var(--c-accent);
+  --text-code: var(--c-code);
+
+  /* 强调色 */
+  --accent: var(--c-accent);
+  --accent-hover: var(--c-accent-hover);
+  --accent-muted: var(--c-accent-muted);
+  --accent-contrast: var(--c-accent-contrast);
+  --accent2: var(--c-accent2);
+
+  /* 描边 */
+  --border: var(--c-border);
+  --border-strong: var(--c-border-strong);
+  --border-subtle: var(--c-border-subtle);
+
+  /* 语义色：删除线、diff、AI ghost text 共用 */
+  --danger: var(--c-danger);
+  --warning: var(--c-warning);
+  --success: var(--c-success);
+
+  /* 阴影：暗色主题下用黑，亮色下用棕，黑影在亮色纸上显脏 */
+  --shadow-sm: 0 1px 2px var(--c-shadow);
+  --shadow-md: 0 4px 12px var(--c-shadow);
+  --shadow-lg: 0 16px 48px var(--c-shadow-strong);
+  --shadow-none: 0 0 0 transparent;
+
+  /* ── 玻璃 ────────────────────────────────────────────────
+   * 三个层次的默认值写在语义层，具体数值随 data-glass 覆盖。
+   * 为什么编辑区不透明：正文是长时间阅读的内容，
+   * 透出桌面壁纸会持续降低对比度，可读性优先于视觉。 */
+  --glass-border: var(--c-glass-border);
+  --glass-l1-blur: 20px;
+  --glass-l1-sat: 180%;
+  --glass-l1-alpha: 0.62;
+  --glass-l2-alpha: 0.88;
+  --glass-l3-blur: 32px;
+  --glass-l3-sat: 200%;
+  --glass-l3-alpha: 0.72;
+
+  /* 发光：只有 Neon Glass 声明具体值，其余主题用透明兜底。
+   * 不写在这里会让组件到处写 if 判断。 */
+  --glow-accent: 0 0 transparent;
+  --glow-accent2: 0 0 transparent;
+}
+
+html[data-motion='off'] {
+  --motion-scale: 0.008;
+}
+
+/* ── 界面密度 ──────────────────────────────────────────────
+ * 密度只改控件高度与行高，不动字号：字号变化会改变换行位置，
+ * 进而让编辑区产生布局偏移，与 CLS < 0.01 的门禁冲突。 */
+html[data-density='compact'] {
+  --control-height: 22px;
+  --control-height-sm: 18px;
+  --row-height: 22px;
+  --toolbar-height: 30px;
+  --statusbar-height: 20px;
+  --titlebar-height: 32px;
+}
+
+html[data-density='comfortable'] {
+  --control-height: 30px;
+  --control-height-sm: 26px;
+  --row-height: 34px;
+  --toolbar-height: 44px;
+  --statusbar-height: 28px;
+  --titlebar-height: 44px;
+}
+
+/* ── 动效降级 ──────────────────────────────────────────────
+ * 系统开启「减弱动态效果」时，全部时长压到 1ms。
+ * 不用 `animation: none`：那会让依赖 animationend 的逻辑永不触发。 */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-scale: 0.008;
+  }
+}

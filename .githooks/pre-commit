@@ -1,0 +1,85 @@
+#!/usr/bin/env bash
+# pre-commit 密钥拦截钩子
+# 目的：防止 API key、token、私钥被误提交进 git 历史。
+# 密钥一旦入库即视为泄露，git 历史难以彻底清除，因此必须在提交前拦截。
+#
+# 安装：git config core.hooksPath .githooks
+# 或在首次 git commit 时手动执行：ln -sf ../../.githooks/pre-commit .git/hooks/pre-commit
+
+set -uo pipefail
+
+RED=$'\033[31m'
+GREEN=$'\033[32m'
+YELLOW=$'\033[33m'
+RESET=$'\033[0m'
+
+# 允许显式跳过：文档中的示例 key、测试夹具的假 key 等场景
+# 用法：SKIP_SECRET_CHECK=1 git commit -m "..."
+if [[ "${SKIP_SECRET_CHECK:-0}" == "1" ]]; then
+  printf '%s⚠ 已跳过密钥检查（SKIP_SECRET_CHECK=1）%s\n' "$YELLOW" "$RESET"
+  exit 0
+fi
+
+# 待检查的文件：已暂存的新增/修改文件
+STAGED=$(git diff --cached --name-only --diff-filter=ACMR)
+
+if [[ -z "$STAGED" ]]; then
+  exit 0
+fi
+
+FOUND=0
+
+report() {
+  local file="$1" line_no="$2" pattern="$3"
+  # 只打印模式名与行号，不回显内容本身 —— 避免密钥二次泄漏到终端日志
+  printf '%s✗ %s:%s  疑似 %s%s\n' "$RED" "$file" "$line_no" "$pattern" "$RESET"
+  FOUND=1
+}
+
+check() {
+  local pattern="$1" label="$2" file="$3"
+  local hits
+  hits=$(grep -nE "$pattern" "$file" 2>/dev/null | cut -d: -f1)
+  if [[ -n "$hits" ]]; then
+    while IFS= read -r line_no; do
+      [[ -n "$line_no" ]] && report "$file" "$line_no" "$label"
+    done <<< "$hits"
+  fi
+}
+
+for file in $STAGED; do
+  # 二进制文件跳过
+  if [[ ! -f "$file" ]] || grep -qI . "$file" 2>/dev/null; then
+    :
+  else
+    continue
+  fi
+
+  # 跳过文档与锁文件：文档中的示例 key 是必要的说明材料
+  case "$file" in
+    docs/*|*.md|*.lock|pnpm-lock.yaml) continue ;;
+  esac
+
+  # 主流厂商 API key 前缀
+  check 'sk-[A-Za-z0-9_-]{20,}'              'OpenAI/Anthropic 风格 key' "$file"
+  check 'sk-ant-[A-Za-z0-9_-]{20,}'          'Anthropic key'            "$file"
+  check 'AIza[0-9A-Za-z_-]{30,}'             'Google API key'           "$file"
+  check 'ghp_[A-Za-z0-9]{30,}'               'GitHub token'             "$file"
+  check 'gsk_[A-Za-z0-9]{30,}'               'Groq key'                 "$file"
+  check 'Bearer [A-Za-z0-9._-]{20,}'         '硬编码 Authorization'     "$file"
+  # 赋值形式的密钥
+  check '(api[_-]?key|apikey|access[_-]?token|secret[_-]?key)[[:space:]]*[:=][[:space:]]*["'"'"'][A-Za-z0-9_-]{16,}' '疑似硬编码密钥' "$file"
+  # 私钥块
+  check 'BEGIN (RSA |EC |OPENSSH |PGP )?PRIVATE KEY' '私钥文件' "$file"
+done
+
+if [[ "$FOUND" -eq 1 ]]; then
+  echo ""
+  printf '%s提交被拦截：检测到疑似密钥。%s\n' "$RED" "$RESET"
+  printf '如确认是误报（如占位示例），用 %sSKIP_SECRET_CHECK=1 git commit%s 跳过。\n' "$YELLOW" "$RESET"
+  printf '真实密钥请存入系统钥匙串（macOS Keychain），配置文件只留 provider id。\n'
+  exit 1
+fi
+
+printf '%s✓ 密钥检查通过（%s 个文件）%s\n' "$GREEN" "$(echo "$STAGED" | wc -l | tr -d ' ')" "$RESET"
+exit 0

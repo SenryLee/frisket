@@ -1,0 +1,55 @@
+[package]
+name = "slate"
+version = "0.1.0"
+description = "本地离线 Markdown 编辑器"
+edition = "2021"
+rust-version = "1.77"
+license = "MIT"
+
+[lib]
+name = "slate_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["macos-private-api"] }
+tauri-plugin-dialog = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# 窗口毛玻璃 / 液态玻璃
+# 0.8.1 起提供 apply_liquid_glass（macOS 26+ 走 NSGlassEffectView）
+window-vibrancy = "0.8.1"
+
+# API key 存 macOS 钥匙串
+keyring = { version = "3", features = ["apple-native"] }
+
+# 快照 diff（行级 myers + 字符级）
+similar = "2"
+
+# 读取图片宽高，用于锁定 widget 盒模型、避免布局抖动
+imagesize = "0.13"
+
+# AI 流式请求
+tokio = { version = "1", features = ["full"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "stream"] }
+futures-util = "0.3"
+eventsource-stream = "0.2"
+toml = "0.9"
+
+# 文件监听
+notify = "8"
+
+[profile.release]
+# 体积优化：目标 dmg ≤ 12MB
+opt-level = "z"
+lto = "fat"
+codegen-units = 1
+strip = true
+panic = "abort"
+incremental = false
+
+[profile.dev]
+incremental = true
