@@ -1,7 +1,7 @@
 {
-  "name": "slate",
-  "version": "0.1.0",
-  "description": "本地离线 Markdown 编辑器",
+  "name": "frisket",
+  "version": "1.0.0",
+  "description": "Frisket：macOS 上的 Markdown 编辑器",
   "type": "module",
   "private": true,
   "license": "MIT",

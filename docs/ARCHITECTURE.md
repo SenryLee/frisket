@@ -1,4 +1,4 @@
-# Slate 架构说明
+# Frisket 架构说明
 
 ## 依赖方向
 
@@ -102,4 +102,4 @@ document.documentElement.dataset.theme = 'ink'
 
 ## 单页应用，无 vue-router
 
-macOS 透明窗口在页面切换时会出现残影（WebKit 层已知问题，无法根治）。Slate 全部视图由 store 驱动，单页切换是最优解。
+macOS 透明窗口在页面切换时会出现残影（WebKit 层已知问题，无法根治）。Frisket 全部视图由 store 驱动，单页切换是最优解。

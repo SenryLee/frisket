@@ -1,4 +1,4 @@
-# tests/ —— Slate 质量门禁
+# tests/ —— Frisket 质量门禁
 
 本目录是 M0 的止损线。用自动化测试**验证或证伪**项目的技术假设：
 行高与 IME 这两条压不下来，整个项目没有继续的意义。
@@ -52,7 +52,7 @@ node tests/fixtures/gen-large.mjs   # 生成 5000 行性能文档
 `supportedEntryTypes` 里没有该类型，探针 `supported=false`。
 MDN 兼容性表标注 Safari 全版本「No support」是**准确的**。
 
-macOS Tauri 用的正是 WKWebView —— Slate 唯一的首发平台上，CLS 分数**根本采不到**。
+macOS Tauri 用的正是 WKWebView —— Frisket 唯一的首发平台上，CLS 分数**根本采不到**。
 用一个采不到的指标当主门禁是自欺。
 
 因此主门禁是**行高恒定**（`src/test-utils/line-height.ts`，用 `getBoundingClientRect` 测，

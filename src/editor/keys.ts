@@ -20,6 +20,7 @@ import type { Command, EditorView } from '@codemirror/view'
 import type { Extension } from '@codemirror/state'
 import { Prec } from '@codemirror/state'
 import { insertTab, indentMore, indentLess } from '@codemirror/commands'
+import { newlineOutsideMarker } from '@/core/newline'
 
 /** 空列表记号的形态：只含缩进与一个列表记号。 */
 const EMPTY_LIST_ITEM = /^(\s*)([-*+]|\d+[.)])\s$/
@@ -52,6 +53,26 @@ const exitEmptyListItem: Command = (view: EditorView) => {
  * M1 的表格需要让位：表格内 Tab 应跳下一个单元格，
  * 届时由 tableField 提供的 keymap 以更高优先级接管。
  */
+/**
+ * 光标贴着行内标记时，换行放到标记外面。
+ *
+ * 放在空列表退出之后：空列表行仍然先退出列表。
+ * 光标在文字中间时这个命令返回 false，默认换行接着处理。
+ */
+const exitInlineMarker: Command = (view: EditorView) => {
+  if (view.state.selection.ranges.length !== 1) return false
+  const range = view.state.selection.main
+  const edit = newlineOutsideMarker(view.state.doc.toString(), range.from, range.to)
+  if (edit === null) return false
+  view.dispatch({
+    changes: { from: edit.from, to: edit.to, insert: edit.insert },
+    selection: { anchor: edit.cursor },
+    scrollIntoView: true,
+    userEvent: 'input',
+  })
+  return true
+}
+
 const indentForward: Command = (view: EditorView) => insertTab(view) || indentMore(view)
 
 /** 选中整行。所见即所得下用户操作单位常是「一段」而非精确到字符。 */
@@ -71,6 +92,7 @@ const selectLine: Command = (view: EditorView) => {
 const baseKeymap: Extension = Prec.highest(
   keymap.of([
     { key: 'Enter', run: exitEmptyListItem },
+    { key: 'Enter', run: exitInlineMarker },
     { key: 'Mod-Enter', run: exitEmptyListItem },
     { key: 'Tab', run: indentForward },
     { key: 'Shift-Tab', run: indentLess },

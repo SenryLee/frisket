@@ -45,6 +45,11 @@ const state = reactive<{
   readOnly: boolean
   /** 正文是否有未保存改动 */
   dirty: boolean
+  /**
+   * 正文每变一次加一。
+   * 同长度换色不改变选区偏移，也不改变字数，颜色按钮靠这个刷新。
+   */
+  rev: number
   prefs: EditorPrefs
 }>({
   stats: { ...EMPTY_STATS },
@@ -53,6 +58,7 @@ const state = reactive<{
   typewriterMode: false,
   readOnly: false,
   dirty: false,
+  rev: 0,
   prefs: {
     fontFamily:
       '-apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", sans-serif',
@@ -130,6 +136,10 @@ export const editor = {
     return state.dirty
   },
 
+  get rev(): number {
+    return state.rev
+  },
+
   get prefs(): EditorPrefs {
     return state.prefs
   },
@@ -166,8 +176,13 @@ export const editor = {
     state.readOnly = readOnly
   },
 
-setDirty(dirty: boolean): void {
+  setDirty(dirty: boolean): void {
     state.dirty = dirty
+  },
+
+  /** 每次正文替换后调用。选区和字数没变时，界面仍能知道文档变了。 */
+  bump(): void {
+    state.rev += 1
   },
 
   /** 整体替换偏好（设置面板加载 / 原生侧下发） */

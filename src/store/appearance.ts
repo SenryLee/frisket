@@ -24,6 +24,7 @@ import type {
   GlassMode,
   Theme,
 } from '@/core/interfaces'
+import { applySkin, loadSkin } from './skin'
 
 /**
  * 内置主题清单。
@@ -53,7 +54,9 @@ const DEFAULT_GLASS: GlassConfig = Object.freeze({
   opacity: 0.62,
 })
 
-const state = reactive<{ prefs: AppearancePrefs }>({
+const FOLLOW_KEY = 'slate.themeFollow'
+
+const state = reactive<{ prefs: AppearancePrefs; followSystem: boolean }>({
   prefs: {
     theme: 'ink',
     glass: { ...DEFAULT_GLASS },
@@ -61,7 +64,39 @@ const state = reactive<{ prefs: AppearancePrefs }>({
     motionScale: 1,
     density: 'normal',
   },
+  followSystem: false,
 })
+
+function themeForScheme(dark: boolean): 'ink' | 'graphite' {
+  return dark ? 'graphite' : 'ink'
+}
+
+function systemIsDark(): boolean {
+  return typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: dark)').matches
+}
+
+function persistFollow(enabled: boolean): void {
+  try {
+    localStorage.setItem(FOLLOW_KEY, enabled ? 'system' : 'off')
+  } catch {
+    // 存储被拒绝时，这次运行里的选择仍然有效。
+  }
+}
+
+let schemeBound = false
+
+function bindScheme(): void {
+  if (schemeBound || typeof window === 'undefined') return
+  schemeBound = true
+  const media = window.matchMedia('(prefers-color-scheme: dark)')
+  media.addEventListener('change', () => {
+    if (!state.followSystem) return
+    const next = themeForScheme(media.matches)
+    if (state.prefs.theme === next) return
+    state.prefs.theme = next
+    applyToDocument()
+  })
+}
 
 /**
  * 判断当前是否运行在 Tauri 里。
@@ -152,6 +187,11 @@ export const appearance = {
     return this.currentTheme.dark
   },
 
+  /** 墨纸和石墨跟着系统。暖米、霓虹玻璃仍是手动选择。 */
+  get followSystem(): boolean {
+    return state.followSystem
+  },
+
   /**
    * 切换主题。
    *
@@ -163,7 +203,18 @@ export const appearance = {
       // 未知 id 直接忽略：宁可保持当前主题，也不要掉进无主题状态
       return
     }
+    // 点了具体主题，就不再跟着系统。跟随本身不是第五个主题。
+    state.followSystem = false
+    persistFollow(false)
     state.prefs.theme = themeId
+    applyToDocument()
+  },
+
+  setFollowSystem(enabled: boolean): void {
+    state.followSystem = enabled
+    persistFollow(enabled)
+    if (!enabled) return
+    state.prefs.theme = themeForScheme(systemIsDark())
     applyToDocument()
   },
 
@@ -182,9 +233,6 @@ export const appearance = {
    */
   setGlassMode(mode: GlassMode): void {
     state.prefs.glass.mode = mode
-    if (mode === 'none') {
-      state.prefs.forceOpaque = true
-    }
     applyToDocument()
   },
 
@@ -244,6 +292,16 @@ export const appearance = {
 
   /** 启动时调用。必须在第一个组件挂载前完成，否则会闪一下默认色 */
   init(): void {
+    try {
+      if (localStorage.getItem(FOLLOW_KEY) === 'system') {
+        state.followSystem = true
+        state.prefs.theme = themeForScheme(systemIsDark())
+      }
+    } catch {
+      state.followSystem = false
+    }
     applyToDocument()
+    applySkin(loadSkin())
+    bindScheme()
   },
 }

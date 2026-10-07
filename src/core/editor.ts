@@ -19,7 +19,8 @@
 import { EditorView } from '@codemirror/view'
 import { EditorState } from '@codemirror/state'
 import type { TransactionSpec } from '@codemirror/state'
-import type { ChangeOrigin, EditorHandle, EditorPrefs, EditorStats, TextRange } from '@/core/interfaces'
+import { redo as redoCommand, undo as undoCommand } from '@codemirror/commands'
+import type { ChangeOrigin, ClientRect, EditorEdit, EditorHandle, EditorPrefs, EditorStats, TextRange } from '@/core/interfaces'
 import { baseExtensions, languageCompartment, prefsCompartment, prefExtensions } from './editor.config'
 import { dropCachedState, getCachedState, setCachedState } from './docCache'
 import { refreshEffect } from '@/editor/effects'
@@ -114,8 +115,8 @@ function buildHandle(view: EditorView, docId: string): SlateEditor {
     setDoc(text: string) {
       dispatchChange(
         view,
-        { changes: { from: 0, to: view.state.doc.length, insert: text } },
-        'ui',
+        { changes: { from: 0, to: view.state.doc.length, insert: text }, selection: { anchor: 0 } },
+        'load',
       )
       setCachedState(docId, view.state)
     },
@@ -190,6 +191,47 @@ function buildHandle(view: EditorView, docId: string): SlateEditor {
     insertImage(path: string, alt = '') {
       const label = alt === '' ? path : alt
       dispatchChange(view, buildLinkInsertion(view.state, label, path, true), 'ui')
+    },
+
+    applyEdit(edit: EditorEdit) {
+      const max = view.state.doc.length
+      const from = clamp(edit.from, 0, max)
+      const to = clamp(edit.to, from, max)
+      dispatchChange(
+        view,
+        {
+          changes: { from, to, insert: edit.insert },
+          selection: { anchor: edit.anchor, head: edit.head },
+        },
+        'format',
+      )
+      view.focus()
+    },
+
+    undo() {
+      const done = undoCommand(view)
+      if (done) view.focus()
+      return done
+    },
+
+    redo() {
+      const done = redoCommand(view)
+      if (done) view.focus()
+      return done
+    },
+
+    selectionRect(): ClientRect | null {
+      const selection = view.state.selection.main
+      const start = view.coordsAtPos(selection.from)
+      const end = view.coordsAtPos(selection.to)
+      if (start === null) return null
+      const far = end ?? start
+      return {
+        left: Math.min(start.left, far.left),
+        top: Math.min(start.top, far.top),
+        right: Math.max(start.right, far.right),
+        bottom: Math.max(start.bottom, far.bottom),
+      }
     },
 
     refresh() {

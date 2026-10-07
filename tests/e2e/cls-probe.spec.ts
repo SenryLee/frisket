@@ -18,7 +18,7 @@ import {
  * `supportedEntryTypes` 里没有该类型，探针的 supported=false，
  * `readCls()` 按设计抛错。
  *
- * 这从实测确认了 CLS 不能当主门禁 —— Slate 首发平台（macOS WKWebView）
+ * 这从实测确认了 CLS 不能当主门禁 —— Frisket 首发平台（macOS WKWebView）
  * 上它根本采不到。行高探针（line-height-probe.spec.ts）在同一引擎上通过。
  *
  * 所以本文件的作用也随之改变：**它是 chromium 上的辅助门禁**，

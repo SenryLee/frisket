@@ -13,8 +13,14 @@ export const CMD = {
   docRead: 'doc_read',
   docWrite: 'doc_write',
   docCreate: 'doc_create',
+  docRename: 'doc_rename',
+  docPickFolder: 'doc_pick_folder',
+  docListMarkdown: 'doc_list_markdown',
   docRevealInFinder: 'doc_reveal_in_finder',
   docPickSavePath: 'doc_pick_save_path',
+  docPickOpen: 'doc_pick_open',
+  docPickSave: 'doc_pick_save',
+  docHistoryTouch: 'doc_history_touch',
   docWatch: 'doc_watch',
   docUnwatch: 'doc_unwatch',
 
@@ -45,6 +51,7 @@ export const CMD = {
   settingsSet: 'settings_set',
 
   // 图片
+  wallpaperPick: 'wallpaper_pick',
   imagePick: 'image_pick',
   /** 读取图片宽高，用于锁定 widget 盒模型 */
   imageSize: 'image_size',
@@ -62,6 +69,12 @@ export const EVENT = {
   fileChanged: 'file:changed',
   /** 窗口尺寸变化，供虚拟化重算 */
   resized: 'window:resized',
+  /** Rust 探测完玻璃能力后推一次，前端据此切换透明表面 */
+  glassMode: 'glass:mode',
+  /** AI 流式增量。载荷是 { requestId, text } */
+  aiDelta: 'ai:delta',
+  /** 一轮回复结束，包括用户取消 */
+  aiDone: 'ai:done',
 } as const
 
 export type EventName = (typeof EVENT)[keyof typeof EVENT]

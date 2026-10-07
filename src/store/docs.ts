@@ -13,6 +13,7 @@
 import { reactive } from 'vue'
 import { CMD } from '@/ipc/commands'
 import type { DocumentMeta } from '@/core/interfaces'
+import { fileStem } from '@/core/filename'
 import { isTauriRuntime } from './appearance'
 
 const state = reactive<{
@@ -23,12 +24,26 @@ const state = reactive<{
   historyLoading: boolean
   /** 历史记录读取失败的原因，null 表示无错误 */
   historyError: string | null
+  /** 当前文档的磁盘路径。还没选文件夹时为 null。 */
+  activePath: string | null
+  /** 还没落盘时，标题栏上显示的文件名，不含 .md。 */
+  pendingName: string
+  /** 最近一次保存失败的原因。成功后清空。 */
+  saveError: string | null
+  /** 本次打开的文档。重命名不换这个值。 */
+  sessionKey: string
 }>({
   items: [],
   currentId: null,
   historyLoading: false,
   historyError: null,
+  activePath: null,
+  pendingName: '未命名',
+  saveError: null,
+  sessionKey: 'draft',
 })
+
+let sessionSerial = 0
 
 export const docs = {
   get list(): readonly DocumentMeta[] {
@@ -66,6 +81,46 @@ export const docs = {
    */
   get currentTitle(): string {
     return this.current?.title ?? ''
+  },
+
+  get activePath(): string | null {
+    return state.activePath
+  },
+
+  /** 标题栏上的文件名。有路径用磁盘名，否则用还没保存的名字。 */
+  get fileLabel(): string {
+    if (state.activePath !== null) return fileStem(state.activePath)
+    return state.pendingName || '未命名'
+  },
+
+  get pendingName(): string {
+    return state.pendingName
+  },
+
+  get saveError(): string | null {
+    return state.saveError
+  },
+
+  setActivePath(path: string | null): void {
+    state.activePath = path
+  },
+
+  setPendingName(name: string): void {
+    state.pendingName = name
+  },
+
+  setSaveError(message: string | null): void {
+    state.saveError = message
+  },
+
+  get sessionKey(): string {
+    return state.sessionKey
+  },
+
+  /** 打开或新建另一份文档时调用。重命名不要调用。 */
+  nextSession(): void {
+    sessionSerial += 1
+    state.sessionKey = String(sessionSerial)
   },
 
   /** 切换当前文档。内核会在此回调里做「先写回上一个再切换」 */

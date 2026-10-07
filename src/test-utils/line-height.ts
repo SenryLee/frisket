@@ -9,7 +9,7 @@ import type { Page } from '@playwright/test'
  *
  * 1. CLS 依赖 PerformanceObserver 的 `layout-shift`，而 MDN 兼容性表明确标注
  *    **Safari 全版本不支持**。macOS Tauri 用的正是 WKWebView ——
- *    Slate 唯一的首发平台上，CLS 分数很可能根本采不到。
+ *    Frisket 唯一的首发平台上，CLS 分数很可能根本采不到。
  *
  * 2. 更根本的问题是：CLS 分数是个**聚合的、间接的**指标。
  *    「CLS = 0.008」这句话无法指导修复，也无法指认是哪个语法元素在抖。

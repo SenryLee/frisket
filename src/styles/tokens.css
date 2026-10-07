@@ -67,7 +67,7 @@
   --control-height: 26px;
   --control-height-sm: 22px;
   --row-height: 28px;
-  --titlebar-height: 38px;
+  --titlebar-height: 46px;
   --statusbar-height: 24px;
   --toolbar-height: 38px;
   --sidebar-width: 240px;
@@ -168,6 +168,8 @@
   --glass-l3-blur: 32px;
   --glass-l3-sat: 200%;
   --glass-l3-alpha: 0.72;
+  /* 标题栏永远留一层实底。全透时红绿灯会浮在桌面上，一点就点出去。 */
+  --titlebar-alpha: 0.94;
 
   /* 发光：只有 Neon Glass 声明具体值，其余主题用透明兜底。
    * 不写在这里会让组件到处写 if 判断。 */

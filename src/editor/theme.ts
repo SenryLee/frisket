@@ -67,13 +67,20 @@ const baseTheme = EditorView.theme({
     fontFamily: METRICS.fontFamily,
     height: '100%',
     color: 'var(--text-primary)',
-    backgroundColor: 'var(--bg-base)',
+    // 底色由外层 glass-l2 提供。这里再铺一层不透明底会把毛玻璃挡住。
+    backgroundColor: 'transparent',
   },
 
   '.cm-scroller': {
     fontFamily: METRICS.fontFamily,
     lineHeight: METRICS.lineHeight,
     overflowY: 'auto',
+    backgroundColor: 'transparent',
+  },
+
+  '.cm-gutters': {
+    backgroundColor: 'transparent',
+    borderRight: '1px solid var(--border-subtle)',
   },
 
   // 内容区最大宽度由 tokens.css 的 --measure-editor 控制（设置面板改它）。
@@ -83,6 +90,14 @@ const baseTheme = EditorView.theme({
     margin: '0 auto',
     padding: 'var(--space-9) var(--space-8)',
     caretColor: 'var(--text-primary)',
+  },
+
+  // 全局 ::selection 把选中文字涂成强调色的对比色（白字）。
+  // 上色之后选区还留着，字色会被这层盖住，看起来像没生效。
+  // ::selection 的 inherit 继承的是父级选区色，不是元素自己的字色，所以这里写回正文色。
+  '& ::selection, &::selection': {
+    color: 'var(--text-primary) !important',
+    WebkitTextFillColor: 'var(--text-primary) !important',
   },
 
   // 选区与光标走语义色，避免暗色主题下出现亮蓝刺眼

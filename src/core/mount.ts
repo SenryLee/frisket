@@ -27,8 +27,8 @@ export interface MountedEditor {
   dispose(): void
 }
 
-/** 挂载选项 =创建参数 + 挂载点。 */
-export type MountOptions = CreateEditorOptions
+/** 挂载选项。挂载点由 hostReady 事件提供，不要求调用方事先传入。 */
+export type MountOptions = Omit<CreateEditorOptions, 'parent'>
 
 /**
  * 挂载编辑器并接通事件广播。
@@ -36,8 +36,21 @@ export type MountOptions = CreateEditorOptions
  * 幂等保护在listenForHost 里（重复 hostReady 直接忽略）；
  * 直接调 mountEditor 则是「每次调用新建一个」，符合直觉。
  */
+let markClean: (() => void) | null = null
+
+/** 保存成功后清掉脏标记。下一次按键会重新标成未保存。 */
+export function markEditorClean(): void {
+  markClean?.()
+}
+
 export function mountEditor(options: MountOptions & { parent: HTMLElement }): MountedEditor {
   let dirty = false
+  const markThisClean = (): void => {
+    if (!dirty) return
+    dirty = false
+    emitSlateEvent(SLATE_EVENT.dirty, false)
+  }
+  markClean = markThisClean
 
   // 统计与选区在「值确实变了」时才广播：它们是高频信号，
   // 每次事务都发会让状态栏做无意义重渲染。去重键放在闭包里。
@@ -48,7 +61,13 @@ export function mountEditor(options: MountOptions & { parent: HTMLElement }): Mo
     ...options,
     onChange: (text, origin) => {
       options.onChange?.(text, origin)
-      if (dirty) return
+      // 打开或新建文档会整篇替换。那不是用户改动，不能把文档标成未保存。
+      if (origin === 'load') {
+        dirty = false
+        emitSlateEvent(SLATE_EVENT.dirty, false)
+        return
+      }
+      // 每次改动都报一次。自动保存靠这个重置等待，不能只在第一次变脏时响。
       dirty = true
       emitSlateEvent(SLATE_EVENT.dirty, true)
     },
@@ -83,6 +102,7 @@ export function mountEditor(options: MountOptions & { parent: HTMLElement }): Mo
   return {
     editor,
     dispose: () => {
+      if (markClean === markThisClean) markClean = null
       cancelComposition()
       editor.destroy()
     },

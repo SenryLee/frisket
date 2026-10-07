@@ -9,25 +9,30 @@
  * ├──────────┬───────────────────────┬───────────┤
  * │ Sidebar  │ Toolbar                │ AI 面板│
  * │  240px   │ ───────────────────── │  380px   │
- * │          │ 编辑区（内核挂载点）      │ 折叠态   │
- * │          │                       │ translate │
- * │          ├───────────────────────┤ X(100%)  │
+ * │          │ 编辑区（内核挂载点）      │  380px   │
+ * │          │                       │  收起为 0 │
+ * │          ├───────────────────────┤          │
  * │          │ StatusBar              │          │
  * └──────────┴───────────────────────┴───────────┘
  *
- * ★ 为什么侧栏折叠用 width、AI 面板用 translateX ★
- * 侧栏折叠后中栏变宽，编辑区必须重排，width 动画本就必要；
- * AI 面板折叠不改变中栏宽度，若用 width 会让编辑区每帧重排。
- * translateX 只走合成层，编辑区的滚动位置与光标完全不受影响。
+ * AI 面板在文档流里。打开时编辑区让出宽度，不再盖住正文。
  */
-import { onBeforeUnmount, onMounted, provide, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, provide, ref, watch } from 'vue'
 import { EDITOR_HANDLE, initStore, loadHistory, useStore } from '@/store'
 import { installDevBridge, removeDevBridge } from '@/store/devBridge'
 import { SLATE_EVENT, emitSlateEvent, onSlateEvent } from '@/core/protocol'
-import type { EditorHandle } from '@/core/interfaces'
+import { CMD, EVENT } from '@/ipc/commands'
+import { isTauriRuntime } from '@/store/appearance'
+import { newMarkdown, noteDocumentEdited, openFromChrome, saveMarkdown } from '@/store/session'
+import { syncAiWindow } from '@/store/aiFrame'
+import type { EditorHandle, GlassMode } from '@/core/interfaces'
 
+import AiPanel from './components/AiPanel.vue'
+import FolderPicker from './components/FolderPicker.vue'
 import AiPanelShell from './components/AiPanelShell.vue'
 import AppTitleBar from './components/AppTitleBar.vue'
+import FollowingBar from './components/FollowingBar.vue'
+import SettingsPanel from './components/SettingsPanel.vue'
 import Sidebar from './components/Sidebar.vue'
 import StatusBar from './components/StatusBar.vue'
 import Toolbar from './components/Toolbar.vue'
@@ -55,6 +60,17 @@ const editorHost = ref<HTMLDivElement | null>(null)
  * 它同时是 Toolbar 判断按钮是否可用的依据。
  */
 const editorHandle = ref<EditorHandle | null>(null)
+const settingsOpen = ref(false)
+let stopGlass: (() => void) | null = null
+
+const glassActive = computed(() => {
+  const mode = store.appearance.prefs.glass.mode
+  return (
+    isTauriRuntime() &&
+    !store.appearance.prefs.forceOpaque &&
+    (mode === 'vibrancy' || mode === 'liquid')
+  )
+})
 
 /** 已建立的全部订阅的解绑函数。集中登记，避免解绑时漏掉某一个 */
 let unsubscribers: Array<() => void> = []
@@ -104,7 +120,11 @@ function subscribeEditorEvents(): void {
     onSlateEvent(SLATE_EVENT.stats, (stats) => store.editor.setStats(stats)),
     onSlateEvent(SLATE_EVENT.selection, (range) => store.editor.setSelection(range)),
     onSlateEvent(SLATE_EVENT.focus, (focused) => store.editor.setFocused(focused)),
-    onSlateEvent(SLATE_EVENT.dirty, (dirty) => store.editor.setDirty(dirty)),
+    onSlateEvent(SLATE_EVENT.dirty, (dirty) => {
+      store.editor.setDirty(dirty)
+      store.editor.bump()
+      if (dirty) noteDocumentEdited(editorHandle.value)
+    }),
   )
 }
 
@@ -130,6 +150,7 @@ function handleToolbarAction(action: ToolbarAction): void {
 
 function handleGlobalKeydown(event: KeyboardEvent): void {
   const metaKey = event.metaKey || event.ctrlKey
+  const key = event.key.toLowerCase()
 
   // ⌘\ 折叠侧栏
   if (metaKey && event.key === '\\') {
@@ -139,9 +160,49 @@ function handleGlobalKeydown(event: KeyboardEvent): void {
   }
 
   // ⌘J 开合 AI 面板。用 preventDefault 避免与输入法候选窗冲突
-  if (metaKey && event.key.toLowerCase() === 'j') {
+  if (metaKey && key === 'j') {
     event.preventDefault()
     store.ai.toggle()
+    return
+  }
+
+  if (metaKey && key === 'o') {
+    event.preventDefault()
+    void openFromChrome(editorHandle.value)
+    return
+  }
+
+  if (metaKey && key === 's') {
+    event.preventDefault()
+    void saveMarkdown(editorHandle.value)
+    return
+  }
+
+  if (metaKey && key === 'n') {
+    event.preventDefault()
+    void newMarkdown(editorHandle.value)
+  }
+}
+
+async function attachGlass(): Promise<void> {
+  if (!isTauriRuntime()) return
+  const [{ invoke }, { listen }] = await Promise.all([
+    import('@tauri-apps/api/core'),
+    import('@tauri-apps/api/event'),
+  ])
+  const apply = (mode: GlassMode) => {
+    if (mode === 'liquid' || mode === 'vibrancy' || mode === 'none') {
+      store.appearance.setGlassMode(mode)
+    }
+  }
+  try {
+    apply(await invoke<GlassMode>(CMD.glassProbe))
+  } catch (error: unknown) {
+    console.warn('[frisket] 读取玻璃模式失败', error)
+  }
+  const unlisten = await listen<GlassMode>(EVENT.glassMode, (event) => apply(event.payload))
+  stopGlass = () => {
+    unlisten()
   }
 }
 
@@ -152,21 +213,65 @@ onMounted(() => {
   subscribeEditorEvents()
   window.addEventListener('keydown', handleGlobalKeydown)
   notifyHostReady()
+  void attachGlass()
+  editorHandle.value?.focus()
 
   // 拉历史放在挂载后而不是 setup 里：它是异步 IO，
   // 放在 setup 会拖慢首帧，而侧栏此时还不需要数据。
   void loadHistory()
 })
 
+watch(
+  () => store.docs.sessionKey,
+  (key) => store.ai.beginDocument(key),
+)
+
+watch(
+  () => store.ai.open,
+  (open) => {
+    void syncAiWindow(open)
+  },
+)
+
+watch(
+  () =>
+    [
+      store.editor.prefs.showLineNumbers,
+      store.editor.prefs.tabSize,
+      store.editor.prefs.autoPair,
+    ] as const,
+  () => {
+    editorHandle.value?.applyPrefs(store.editor.getPrefsSnapshot())
+  },
+)
+
 onBeforeUnmount(() => {
   unsubscribeEditorEvents()
   window.removeEventListener('keydown', handleGlobalKeydown)
+  stopGlass?.()
 })
 </script>
 
 <template>
-  <div class="app" :class="{ 'is-sidebar-collapsed': store.sidebarCollapsed }">
-    <AppTitleBar />
+  <div
+    class="app"
+    :class="{
+      'is-sidebar-collapsed': store.sidebarCollapsed,
+      'is-glass': glassActive,
+      'has-wallpaper': store.wallpaper.active,
+    }"
+  >
+    <div
+      v-if="store.wallpaper.src"
+      class="app__wallpaper"
+      :style="{ backgroundImage: `url(${store.wallpaper.src})` }"
+    />
+    <div
+      v-if="store.wallpaper.src"
+      class="app__scrim"
+      :style="{ opacity: store.wallpaper.dim }"
+    />
+    <AppTitleBar :glass="glassActive || store.wallpaper.active" @toggle-settings="settingsOpen = !settingsOpen" />
 
     <!-- 三栏。刻意不显式写 align-items：
          默认的 stretch 正是我们要的，一旦某天被全局样式改成 flex-start，
@@ -184,25 +289,58 @@ onBeforeUnmount(() => {
 
         <!-- 编辑区容器。glass-l2：88% 不透明，可读性优先 -->
         <div class="app__editor glass-l2" ref="editorHost" />
+        <FollowingBar @action="handleToolbarAction" />
 
         <StatusBar />
       </main>
 
       <!-- 右栏 -->
-      <AiPanelShell />
+      <AiPanelShell>
+        <AiPanel @open-settings="settingsOpen = true" />
+      </AiPanelShell>
     </div>
+    <SettingsPanel v-if="settingsOpen" @close="settingsOpen = false" />
+    <FolderPicker />
   </div>
 </template>
 
 <style scoped>
 .app {
+  position: relative;
   display: flex;
   flex-direction: column;
   height: 100%;
-  /* 应用根容器必须完全不透明：它是玻璃层「下方」的底色来源，
-   * 若这里透明，玻璃面板后面会露出桌面，层次关系就反了 */
-  background: var(--bg-base);
+  background: var(--bg-sunken);
   overflow: hidden;
+}
+
+.app__wallpaper,
+.app__scrim {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.app__wallpaper {
+  background-size: cover;
+  background-position: center;
+}
+
+.app__scrim {
+  background: #000;
+}
+
+/* 原生毛玻璃生效时，根容器必须透明，磨砂才会从窗口透出来。
+   编辑区和侧栏自己带半透明表面，正文仍然可读。 */
+.app.is-glass,
+.app.has-wallpaper {
+  background: transparent;
+}
+
+.app > .title-bar,
+.app__body {
+  position: relative;
+  z-index: 1;
 }
 
 .app__body {
@@ -213,7 +351,6 @@ onBeforeUnmount(() => {
   min-height: 0;
   /* 写死 stretch：三栏必须等高，任何外部覆盖都会让底部分层错位 */
   align-items: stretch;
-  /* AI 面板用绝对定位悬浮于此，必须有定位上下文 */
   position: relative;
 }
 
@@ -223,11 +360,14 @@ onBeforeUnmount(() => {
   width: var(--sidebar-width);
   flex-shrink: 0;
   overflow: hidden;
+  padding: 0;
+  box-sizing: border-box;
   transition: width var(--dur-panel-eff) var(--ease-out);
 }
 
 .app.is-sidebar-collapsed .app__sidebar-slot {
   width: var(--sidebar-width-collapsed);
+  padding: 0;
 }
 
 .app__main {
@@ -235,6 +375,8 @@ onBeforeUnmount(() => {
   flex-direction: column;
   flex: 1;
   min-width: 0;
+  padding: 0;
+  gap: 0;
   /* 中栏是编辑区主体，不加玻璃：它就是 L2 本身，
    * 再套一层玻璃会与内部编辑区背景叠加出浑浊的颜色 */
   background: transparent;
@@ -245,5 +387,7 @@ onBeforeUnmount(() => {
   min-height: 0;
   position: relative;
   overflow: hidden;
+  border-radius: 0;
+  box-shadow: none;
 }
 </style>

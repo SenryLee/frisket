@@ -40,6 +40,12 @@ body,
   background: transparent;
 }
 
+/* 原生毛玻璃已经铺在窗口上时，html 这层也不能再铺实色，否则整窗被挡住。 */
+html[data-runtime='tauri'][data-glass='vibrancy'][data-force-opaque='false'],
+html[data-runtime='tauri'][data-glass='liquid'][data-force-opaque='false'] {
+  background: transparent;
+}
+
 body {
   font-family: var(--font-ui);
   font-size: var(--text-base);

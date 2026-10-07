@@ -1,20 +1,20 @@
 [package]
-name = "slate"
-version = "0.1.0"
-description = "本地离线 Markdown 编辑器"
+name = "frisket"
+version = "1.0.0"
+description = "Frisket：macOS 上的 Markdown 编辑器"
 edition = "2021"
 rust-version = "1.77"
 license = "MIT"
 
 [lib]
-name = "slate_lib"
+name = "frisket_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["macos-private-api"] }
+tauri = { version = "2", features = ["macos-private-api", "protocol-asset"] }
 tauri-plugin-dialog = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -42,14 +42,23 @@ toml = "0.9"
 # 文件监听
 notify = "8"
 
+[target.'cfg(target_os = "macos")'.dependencies]
+# 只用来把 WKWebView 指针交给液态玻璃的 content_view。版本跟 window-vibrancy 对齐。
+objc2-app-kit = { version = "0.3.2", features = ["NSView"] }
+
 [profile.release]
 # 体积优化：目标 dmg ≤ 12MB
 opt-level = "z"
 lto = "fat"
 codegen-units = 1
-strip = true
+# 依赖（尤其是 proc-macro dylib）不要 strip。
+# 并行 strip 会把 macOS 的 LINKEDIT 剥坏，后面的 crate 无法 dlopen。
+strip = "none"
 panic = "abort"
 incremental = false
+
+[profile.release.package.frisket]
+strip = "symbols"
 
 [profile.dev]
 incremental = true

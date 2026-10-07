@@ -83,14 +83,41 @@ export interface EditorHandle {
   insertLink(text: string, url: string): void;
   insertImage(path: string, alt?: string): void;
 
+  /** 应用一次已经算好的文本替换。工具栏与快捷键共用这条写路径。 */
+  applyEdit(edit: EditorEdit): void;
+  undo(): boolean;
+  redo(): boolean;
+  /** 选区在视口中的位置。选区不在屏幕上时返回 null。 */
+  selectionRect(): ClientRect | null;
+
   /** 手动触发 decoration 重算。设置主题等样式变更后需调用。 */
   refresh(): void;
+
+  /** 行号等需要换扩展的偏好。字号走 CSS 变量，不经过这里。 */
+  applyPrefs(prefs: EditorPrefs): void;
 
   /** 统计信息，供状态栏显示 */
   getStats(): EditorStats;
 }
 
-export type ChangeOrigin = 'user' | 'ai' | 'format' | 'paste' | 'ui';
+export type ChangeOrigin = 'user' | 'ai' | 'format' | 'paste' | 'ui' | 'load';
+
+/** 一次编辑替换。坐标都是文档偏移，anchor/head 是替换完成之后的选区。 */
+export interface EditorEdit {
+  from: number
+  to: number
+  insert: string
+  anchor: number
+  head: number
+}
+
+/** 相对视口的矩形。用来把跟随工具栏摆到选区旁边。 */
+export interface ClientRect {
+  left: number
+  top: number
+  right: number
+  bottom: number
+}
 
 export interface TextRange {
   from: number;

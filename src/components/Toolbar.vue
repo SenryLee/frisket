@@ -1,136 +1,365 @@
 <script setup lang="ts">
 /**
- * Toolbar.vue —— 快捷栏容器
- *
- * 在整体中的位置：编辑区顶部、状态栏之上，是M1 主要工作量所在。
- * M0 只交付容器结构与按钮的视觉规格。
- *
- * ★ 设计原则：M0 的按钮是真的，不是装饰 ★
- * 每个按钮都发出具名意图事件（emit），由 App.vue 转交给内核的
- * EditorHandle执行。这样做的原因：快捷栏、内核、命令面板
- * 都操作同一份文档状态，若各自直接调EditorHandle，
- * 就会出现「同一操作三条路径」，撤销分组与 AI 写回识别都会出错。
- * 统一走事件，调用路径永远只有一条。
- *
- * 内核未接入时按钮是disabled 而不是「点了没反应」——
- * 后者会让用户反复点，是最差的交互。
+ * 顶部格式栏。参考 Obsidian Editing Toolbar 的 top 模式：
+ * 一组常驻按钮，标题、颜色、链接、图片、表格走弹出层。
+ * 宽度不够时横向滚动，不换行。
  */
-import { computed, inject } from 'vue'
+import { computed, inject, onBeforeUnmount, onMounted, ref } from 'vue'
 import { EDITOR_HANDLE, useStore } from '@/store'
+import { sameHex, useSelectionInk } from './inkPreview'
+import { cancelPainter, painterArmed } from './toolbarActions'
+import { BACKGROUND_COLORS, TEXT_COLORS } from './types'
 import type { ToolbarAction } from './types'
+import type { AlignMode } from '@/core/format'
 
 const emit = defineEmits<{
   action: [action: ToolbarAction]
 }>()
 
 const store = useStore()
+const editorHandleRef = inject(EDITOR_HANDLE, null)
+const editorReady = computed(() => editorHandleRef?.value != null)
+const { ink, textStyle, highlightStyle } = useSelectionInk()
 
-interface ToolbarButton {
+type PopoverKind = 'heading' | 'link' | 'image' | 'table' | 'textColor' | 'bgColor' | 'align'
+
+const popover = ref<{ kind: PopoverKind; top: number; left: number } | null>(null)
+const linkText = ref('')
+const linkUrl = ref('https://')
+const imageAlt = ref('')
+const imageSrc = ref('')
+const tableRows = ref(3)
+const tableCols = ref(3)
+
+interface ButtonSpec {
   action: ToolbarAction
   label: string
   hint: string
   glyph: string
-  /** 分组间隔线：用于视觉分段 */
-  separated: boolean
+  tone?: 'bold' | 'italic' | 'strike' | 'code'
 }
 
-/**
- * 按钮清单。
- *
- * 分组顺序按「写作频率」而非功能类别：
- * 粗体/斜体/删除线连在一起是最高频的，
- * 把它们隔开会让每次加粗都变成一次视线搜索。
- */
-const buttons: readonly ToolbarButton[] = Object.freeze([
-  { action: 'bold', label: '加粗', hint: '⌘B', glyph: 'B', separated: false },
-  { action: 'italic', label: '斜体', hint: '⌘I', glyph: 'I', separated: false },
-  { action: 'strike', label: '删除线', hint: '', glyph: 'S', separated: false },
-  { action: 'heading', label: '标题', hint: '⌘⌥1', glyph: 'H', separated: true },
-  { action: 'code', label: '行内代码', hint: '⌘E', glyph: '<>', separated: false },
-  { action: 'quote', label: '引用', hint: '⌘⇧9', glyph: '❝', separated: true },
-  { action: 'bulletList', label: '无序列表', hint: '⌘⇧8', glyph: '•', separated: false },
-  { action: 'orderedList', label: '有序列表', hint: '⌘⇧7', glyph: '1.', separated: false },
-  { action: 'table', label: '表格', hint: '', glyph: '▦', separated: true },
-  { action: 'link', label: '链接', hint: '⌘K', glyph: '⚯', separated: true },
-  { action: 'image', label: '图片', hint: '⌘⇧I', glyph: '▨', separated: false },
-])
+const historyButtons: readonly ButtonSpec[] = [
+  { action: { id: 'undo' }, label: '撤销', hint: '⌘Z', glyph: '↩' },
+  { action: { id: 'redo' }, label: '重做', hint: '⇧⌘Z', glyph: '↪' },
+]
 
-/**
- * 内核是否已就绪。
- *
- * 直接问内核注入的 EditorHandle 是否存在，而不是维护一个布尔开关：
- * 手写布尔量的必然结果是「内核早已就绪但按钮还是灰的」。
- */
-const editorHandleRef = inject(EDITOR_HANDLE, null)
+const markButtons: readonly ButtonSpec[] = [
+  { action: { id: 'bold' }, label: '加粗', hint: '⌘B', glyph: 'B', tone: 'bold' },
+  { action: { id: 'italic' }, label: '斜体', hint: '⌘I', glyph: 'I', tone: 'italic' },
+  { action: { id: 'strike' }, label: '删除线', hint: '⇧⌘X', glyph: 'S', tone: 'strike' },
+  { action: { id: 'code' }, label: '行内代码', hint: '⌘E', glyph: '</>', tone: 'code' },
+]
 
-const editorReady = computed(() => {
-  const handle = editorHandleRef?.value
-  return handle !== null && handle !== undefined
-})
+const blockButtons: readonly ButtonSpec[] = [
+  { action: { id: 'quote' }, label: '引用', hint: '⇧⌘9', glyph: '❝' },
+  { action: { id: 'bullet' }, label: '无序列表', hint: '⇧⌘8', glyph: '•' },
+  { action: { id: 'ordered' }, label: '有序列表', hint: '⇧⌘7', glyph: '1.' },
+  { action: { id: 'task' }, label: '任务', hint: '', glyph: '☑' },
+  { action: { id: 'outdent' }, label: '减少缩进', hint: '', glyph: '⇤' },
+  { action: { id: 'indent' }, label: '增加缩进', hint: '', glyph: '⇥' },
+]
 
-/**
- * 按钮的 tooltip 文案。
- *
- * 把快捷键提示拼进 title 而不是单独渲染一列：快捷键标注占位会
- * 让 11 个按钮的宽度膨胀近一倍，而tooltip 在使用时才需要。
- */
-function buttonTitle(button: ToolbarButton, ready: boolean): string {
-  const name = button.hint === '' ? button.label : `${button.label} ${button.hint}`
-  return ready ? name : `${name}（编辑器内核接入后可用）`
+const insertButtons: readonly ButtonSpec[] = [
+  { action: { id: 'hr' }, label: '分割线', hint: '', glyph: '—' },
+  { action: { id: 'hardBreak' }, label: '硬换行', hint: '', glyph: '↵' },
+  { action: { id: 'clear' }, label: '清除格式', hint: '', glyph: '⌫' },
+]
+
+const aligns: readonly { align: AlignMode; label: string; glyph: string }[] = [
+  { align: 'left', label: '左对齐', glyph: '左' },
+  { align: 'center', label: '居中', glyph: '中' },
+  { align: 'right', label: '右对齐', glyph: '右' },
+  { align: 'justify', label: '两端对齐', glyph: '齐' },
+]
+
+function titleOf(label: string, hint: string): string {
+  return hint === '' ? label : `${label}  ${hint}`
 }
 
-function trigger(action: ToolbarAction): void {
+function fire(action: ToolbarAction): void {
+  popover.value = null
   emit('action', action)
 }
+
+function openPopover(kind: PopoverKind, event: MouseEvent): void {
+  const button = event.currentTarget
+  if (!(button instanceof HTMLElement)) return
+  if (popover.value?.kind === kind) {
+    popover.value = null
+    return
+  }
+  const rect = button.getBoundingClientRect()
+  const width = kind === 'link' || kind === 'image' ? 244 : 210
+  popover.value = {
+    kind,
+    top: rect.bottom + 6,
+    left: Math.max(8, Math.min(rect.left, window.innerWidth - width - 8)),
+  }
+  if (kind === 'link') {
+    const handle = editorHandleRef?.value
+    const selection = handle?.getSelection()
+    const selected =
+      handle && selection && selection.from !== selection.to
+        ? handle.getDoc().slice(selection.from, selection.to)
+        : ''
+    linkText.value = selected
+    linkUrl.value = 'https://'
+  }
+  if (kind === 'image') {
+    imageAlt.value = ''
+    imageSrc.value = ''
+  }
+}
+
+function keepSelection(event: MouseEvent): void {
+  const target = event.target
+  if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) return
+  event.preventDefault()
+}
+
+function submitLink(): void {
+  fire({ id: 'link', text: linkText.value.trim() || '链接', url: linkUrl.value.trim() })
+}
+
+function submitImage(): void {
+  fire({ id: 'image', alt: imageAlt.value.trim() || '图片', src: imageSrc.value.trim() })
+}
+
+function pickTable(rows: number, cols: number): void {
+  fire({ id: 'table', rows, cols })
+}
+
+function hoverTable(rows: number, cols: number): void {
+  tableRows.value = rows
+  tableCols.value = cols
+}
+
+function keepPopover(event: MouseEvent): void {
+  const target = event.target
+  if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) return
+  event.preventDefault()
+}
+
+function onCustomColor(event: Event): void {
+  const target = event.target
+  if (!(target instanceof HTMLInputElement) || popover.value === null) return
+  const kind = popover.value.kind === 'bgColor' ? 'background' : 'text'
+  if (!/^#[0-9a-fA-F]{6}$/.test(target.value)) return
+  fire({ id: 'color', kind, color: target.value })
+}
+
+function onDocumentPointer(event: Event): void {
+  const target = event.target
+  if (!(target instanceof Node)) return
+  if (target instanceof Element && target.closest('.toolbar, .popover')) return
+  popover.value = null
+}
+
+function onKeydown(event: KeyboardEvent): void {
+  if (event.key === 'Escape') popover.value = null
+}
+
+onMounted(() => {
+  document.addEventListener('pointerdown', onDocumentPointer)
+  document.addEventListener('keydown', onKeydown)
+})
+
+onBeforeUnmount(() => {
+  document.removeEventListener('pointerdown', onDocumentPointer)
+  document.removeEventListener('keydown', onKeydown)
+})
 </script>
 
 <template>
-  <div class="toolbar glass-l1" role="toolbar" aria-label="格式快捷栏">
-    <!-- 按钮组 -->
-    <div class="toolbar__group">
-      <button
-        v-for="button in buttons"
-        :key="button.action"
-        class="toolbar__button"
-        :class="{
-          'is-separated': button.separated,
-          'is-disabled': !editorReady,
-        }"
-        type="button"
-        :disabled="!editorReady"
-        :title="buttonTitle(button, editorReady)"
-        :aria-label="button.label"
-        @click="trigger(button.action)"
-      >
-        <span
-          class="toolbar__glyph"
-          :class="{
-            'is-bold': button.action === 'bold',
-            'is-italic': button.action === 'italic',
-            'is-strike': button.action === 'strike',
-          }"
-          >{{ button.glyph }}</span
+  <div class="toolbar glass-l1" role="toolbar" aria-label="格式快捷栏" @mousedown="keepSelection">
+    <div class="toolbar__scroll">
+      <div class="toolbar__group">
+        <button
+          v-for="button in historyButtons"
+          :key="button.label"
+          class="toolbar__button"
+          type="button"
+          :disabled="!editorReady"
+          :title="titleOf(button.label, button.hint)"
+          :aria-label="button.label"
+          @click="fire(button.action)"
         >
-      </button>
+          <span class="toolbar__glyph">{{ button.glyph }}</span>
+        </button>
+      </div>
+
+      <span class="toolbar__sep" />
+
+      <div class="toolbar__group">
+        <button
+          class="toolbar__button toolbar__button--menu"
+          type="button"
+          :disabled="!editorReady"
+          title="标题"
+          aria-label="标题"
+          @click="openPopover('heading', $event)"
+        >
+          <span class="toolbar__glyph is-bold">H</span>
+          <span class="toolbar__caret">▾</span>
+        </button>
+        <button
+          v-for="level in [1, 2, 3]"
+          :key="level"
+          class="toolbar__button"
+          type="button"
+          :disabled="!editorReady"
+          :title="`标题 ${level}  ⌥⌘${level}`"
+          :aria-label="`标题 ${level}`"
+          @click="fire({ id: 'heading', level })"
+        >
+          <span class="toolbar__glyph">H{{ level }}</span>
+        </button>
+      </div>
+
+      <span class="toolbar__sep" />
+
+      <div class="toolbar__group">
+        <button
+          v-for="button in markButtons"
+          :key="button.label"
+          class="toolbar__button"
+          type="button"
+          :disabled="!editorReady"
+          :title="titleOf(button.label, button.hint)"
+          :aria-label="button.label"
+          @click="fire(button.action)"
+        >
+          <span class="toolbar__glyph" :class="button.tone ? `is-${button.tone}` : ''">{{ button.glyph }}</span>
+        </button>
+        <button
+          class="toolbar__button"
+          type="button"
+          :disabled="!editorReady"
+          :title="ink.color ? `文字颜色 ${ink.color}` : '文字颜色'"
+          aria-label="文字颜色"
+          @click="openPopover('textColor', $event)"
+        >
+          <span class="toolbar__glyph is-color" :style="textStyle">
+            A
+            <span class="toolbar__ink-bar" />
+          </span>
+        </button>
+        <button
+          class="toolbar__button"
+          type="button"
+          :disabled="!editorReady"
+          :title="ink.background ? `高亮 ${ink.background}` : '高亮'"
+          aria-label="高亮"
+          @click="openPopover('bgColor', $event)"
+        >
+          <span class="toolbar__glyph is-bg" :style="highlightStyle">高</span>
+        </button>
+        <button
+          class="toolbar__button"
+          type="button"
+          :disabled="!editorReady"
+          :class="{ 'is-on': painterArmed }"
+          :title="painterArmed ? '格式刷已拿起，选中目标后再点一次。右键取消' : '格式刷：先选中带格式的文字'"
+          aria-label="格式刷"
+          @click="fire({ id: 'painter' })"
+          @contextmenu.prevent="cancelPainter()"
+        >
+          <span class="toolbar__glyph">刷</span>
+        </button>
+      </div>
+
+      <span class="toolbar__sep" />
+
+      <div class="toolbar__group">
+        <button
+          v-for="button in blockButtons"
+          :key="button.label"
+          class="toolbar__button"
+          type="button"
+          :disabled="!editorReady"
+          :title="titleOf(button.label, button.hint)"
+          :aria-label="button.label"
+          @click="fire(button.action)"
+        >
+          <span class="toolbar__glyph">{{ button.glyph }}</span>
+        </button>
+      </div>
+
+      <span class="toolbar__sep" />
+
+      <div class="toolbar__group">
+        <button
+          class="toolbar__button"
+          type="button"
+          :disabled="!editorReady"
+          title="链接"
+          aria-label="链接"
+          @click="openPopover('link', $event)"
+        >
+          <span class="toolbar__glyph">链</span>
+        </button>
+        <button
+          class="toolbar__button"
+          type="button"
+          :disabled="!editorReady"
+          title="图片"
+          aria-label="图片"
+          @click="openPopover('image', $event)"
+        >
+          <span class="toolbar__glyph">图</span>
+        </button>
+        <button
+          class="toolbar__button"
+          type="button"
+          :disabled="!editorReady"
+          title="表格"
+          aria-label="表格"
+          @click="openPopover('table', $event)"
+        >
+          <span class="toolbar__glyph">表</span>
+        </button>
+        <button
+          class="toolbar__button"
+          type="button"
+          :disabled="!editorReady"
+          title="对齐"
+          aria-label="对齐"
+          @click="openPopover('align', $event)"
+        >
+          <span class="toolbar__glyph">齐</span>
+        </button>
+      </div>
+
+      <span class="toolbar__sep" />
+
+      <div class="toolbar__group">
+        <button
+          v-for="button in insertButtons"
+          :key="button.label"
+          class="toolbar__button"
+          type="button"
+          :disabled="!editorReady"
+          :title="button.label"
+          :aria-label="button.label"
+          @click="fire(button.action)"
+        >
+          <span class="toolbar__glyph">{{ button.glyph }}</span>
+        </button>
+      </div>
     </div>
 
-    <div class="spacer" />
-
-    <!-- 右侧：编辑区偏好开关。
-         这里放的是不需要内核就能生效的视觉开关，
-         它们立即改变 CSS 变量，是M0 唯一可验证的交互闭环。 -->
     <div class="toolbar__group toolbar__group--trailing">
       <button
         class="toolbar__toggle"
         type="button"
         :class="{ 'is-on': store.editor.typewriterMode }"
         :aria-pressed="store.editor.typewriterMode"
-        title="打字机模式：当前行固定在视口垂直中央"
+        title="打字机模式：正在写的这一行保持在画面正中，文档往下滚。不改动 Markdown。"
         @click="store.editor.setTypewriterMode(!store.editor.typewriterMode)"
       >
-        打字机
+        行居中
       </button>
-
       <button
         class="toolbar__toggle"
         type="button"
@@ -142,27 +371,135 @@ function trigger(action: ToolbarAction): void {
         行号
       </button>
     </div>
+
+    <Teleport to="body">
+    <div
+      v-if="popover"
+      class="popover glass-l3"
+      :style="{ top: `${popover.top}px`, left: `${popover.left}px` }"
+      @mousedown="keepPopover"
+      @pointerdown.stop
+    >
+      <div v-if="popover.kind === 'heading'" class="popover__list" role="menu">
+        <button
+          v-for="level in 6"
+          :key="level"
+          type="button"
+          class="popover__item"
+          :style="{ fontSize: `${18 - level}px` }"
+          @click="fire({ id: 'heading', level })"
+        >
+          标题 {{ level }}
+        </button>
+      </div>
+
+      <form v-else-if="popover.kind === 'link'" class="popover__form" @submit.prevent="submitLink">
+        <label class="popover__label">显示文字<input v-model="linkText" class="popover__input" /></label>
+        <label class="popover__label">链接<input v-model="linkUrl" class="popover__input" /></label>
+        <button class="popover__submit" type="submit">插入链接</button>
+      </form>
+
+      <form v-else-if="popover.kind === 'image'" class="popover__form" @submit.prevent="submitImage">
+        <label class="popover__label">描述<input v-model="imageAlt" class="popover__input" /></label>
+        <label class="popover__label">地址或本地路径<input v-model="imageSrc" class="popover__input" /></label>
+        <button class="popover__submit" type="submit">插入图片</button>
+      </form>
+
+      <div v-else-if="popover.kind === 'table'" class="popover__table">
+        <p class="popover__caption">{{ tableRows }} × {{ tableCols }}</p>
+        <div class="popover__grid">
+          <button
+            v-for="cell in 36"
+            :key="cell"
+            type="button"
+            class="popover__cell"
+            :class="{ 'is-hot': Math.ceil(cell / 6) <= tableRows && ((cell - 1) % 6) + 1 <= tableCols }"
+            @mouseenter="hoverTable(Math.ceil(cell / 6), ((cell - 1) % 6) + 1)"
+            @click="pickTable(Math.ceil(cell / 6), ((cell - 1) % 6) + 1)"
+          />
+        </div>
+      </div>
+
+      <div v-else-if="popover.kind === 'textColor' || popover.kind === 'bgColor'" class="popover__palette">
+        <p class="popover__caption">{{ popover.kind === 'textColor' ? '文字颜色' : '高亮' }}</p>
+        <div class="popover__colors">
+          <button
+            v-for="color in popover.kind === 'textColor' ? TEXT_COLORS : BACKGROUND_COLORS"
+            :key="color"
+            type="button"
+            class="popover__swatch"
+            :class="{ 'is-current': sameHex(popover.kind === 'textColor' ? ink.color : ink.background, color) }"
+            :style="{ background: color }"
+            :aria-label="color"
+            @click="fire({ id: 'color', kind: popover.kind === 'textColor' ? 'text' : 'background', color })"
+          />
+        </div>
+        <label class="popover__custom">
+          自定义
+          <input
+            :key="popover.kind"
+            type="color"
+            :value="popover.kind === 'textColor' ? (ink.color ?? '#c0392b') : (ink.background ?? '#f3e2a2')"
+            @change="onCustomColor"
+          />
+        </label>
+      </div>
+
+      <div v-else class="popover__list">
+        <button
+          v-for="item in aligns"
+          :key="item.align"
+          type="button"
+          class="popover__item"
+          @click="fire({ id: 'align', align: item.align })"
+        >
+          {{ item.label }}
+        </button>
+      </div>
+    </div>
+    </Teleport>
   </div>
 </template>
 
 <style scoped>
 .toolbar {
+  position: relative;
   display: flex;
   align-items: center;
   height: var(--toolbar-height);
-  padding: 0 var(--space-4);
-  gap: var(--space-3);
-  /* 工具栏与编辑区同处中栏，只需要下边框；
-   * glass-l1 的右边框会与侧栏的边框重叠成双线 */
+  padding: 0 var(--space-3);
+  gap: var(--space-2);
   border-right: none;
   border-bottom: 1px solid var(--border-subtle);
   flex-shrink: 0;
+}
+
+.toolbar__scroll {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.toolbar__scroll::-webkit-scrollbar {
+  display: none;
 }
 
 .toolbar__group {
   display: flex;
   align-items: center;
   gap: 1px;
+  flex-shrink: 0;
+}
+
+.toolbar__sep {
+  width: 1px;
+  height: 14px;
+  background: var(--border);
+  flex-shrink: 0;
 }
 
 .toolbar__button {
@@ -172,82 +509,219 @@ function trigger(action: ToolbarAction): void {
   min-width: var(--control-height);
   height: var(--control-height);
   padding: 0 var(--space-2);
-  border-radius: var(--radius-sm);
+  border-radius: 10px;
   color: var(--text-secondary);
   transition:
     background var(--dur-fast-eff) var(--ease-out),
     color var(--dur-fast-eff) var(--ease-out);
 }
 
-.toolbar__button:not(:disabled):hover {
+.toolbar__button--menu {
+  gap: 1px;
+  padding-right: var(--space-1);
+}
+
+.toolbar__button:not(:disabled):hover,
+.toolbar__button.is-on {
   background: var(--bg-hover);
   color: var(--text-primary);
 }
 
-/* 分组间隔线：用 border 而非额外元素，省一个 DOM 节点 */
-.toolbar__button.is-separated {
-  position: relative;
-  margin-left: var(--space-4);
+.toolbar__button.is-on {
+  background: var(--accent-muted);
+  color: var(--accent);
 }
 
-.toolbar__button.is-separated::before {
-  content: '';
-  position: absolute;
-  left: calc(var(--space-4) / -2 - 1px);
-  top: 20%;
-  bottom: 20%;
-  width: 1px;
-  background: var(--border);
+.toolbar__button:disabled {
+  opacity: 0.4;
 }
 
 .toolbar__glyph {
-  font-size: var(--text-md);
+  font-size: var(--text-sm);
   line-height: 1;
-  /* 字形基线对齐：不同 glyph 的默认行高不一致，
-   * 不统一会让按钮里的符号参差不齐 */
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 100%;
 }
 
-.toolbar__glyph.is-bold {
+.toolbar__glyph.is-bold { font-weight: 700; }
+.toolbar__glyph.is-italic { font-style: italic; font-family: Georgia, serif; }
+.toolbar__glyph.is-strike { text-decoration: line-through; }
+.toolbar__glyph.is-code { font-family: var(--font-mono); font-size: 11px; }
+.toolbar__glyph.is-color {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  color: var(--accent);
+  font-weight: 700;
+  line-height: 1;
+}
+.toolbar__ink-bar {
+  width: 11px;
+  height: 2px;
+  border-radius: 1px;
+  background: currentColor;
+  box-shadow: 0 0 0 1px var(--border-strong);
+}
+.toolbar__glyph.is-bg {
+  background: #f3e2a2;
+  color: #1a1a1a;
+  border-radius: 2px;
+  padding: 0 2px;
   font-weight: 700;
 }
 
-.toolbar__glyph.is-italic {
-  font-style: italic;
-  font-family: Georgia, serif;
-}
-
-.toolbar__glyph.is-strike {
-  text-decoration: line-through;
+.toolbar__caret {
+  font-size: 8px;
+  opacity: 0.7;
 }
 
 .toolbar__toggle {
   height: var(--control-height-sm);
-  padding: 0 var(--space-4);
+  padding: 0 var(--space-3);
   border-radius: var(--radius-full);
   font-size: var(--text-xs);
   color: var(--text-secondary);
   background: var(--bg-sunken);
-  transition:
-    background var(--dur-fast-eff) var(--ease-out),
-    color var(--dur-fast-eff) var(--ease-out);
-}
-
-.toolbar__toggle:hover {
-  background: var(--bg-hover);
-  color: var(--text-primary);
+  flex-shrink: 0;
 }
 
 .toolbar__toggle.is-on {
   background: var(--accent-muted);
   color: var(--accent);
-  box-shadow: var(--glow-accent);
 }
 
 .toolbar__group--trailing {
+  gap: var(--space-2);
+}
+
+.popover {
+  position: fixed;
+  z-index: var(--z-float);
+  min-width: 168px;
+  padding: var(--space-3);
+  background: var(--bg-overlay);
+}
+
+.popover__list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.popover__item,
+.popover__submit {
+  text-align: left;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+}
+
+.popover__item:hover,
+.popover__submit:hover {
+  background: var(--bg-hover);
+}
+
+.popover__form {
+  display: flex;
+  flex-direction: column;
   gap: var(--space-3);
+  width: 220px;
+}
+
+.popover__label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.popover__input {
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-raised);
+  color: var(--text-primary);
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.popover__submit {
+  background: var(--accent);
+  color: var(--accent-contrast);
+  text-align: center;
+}
+
+.popover__caption {
+  margin-bottom: 6px;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.popover__grid {
+  display: grid;
+  grid-template-columns: repeat(6, 16px);
+  gap: 3px;
+}
+
+.popover__cell {
+  width: 16px;
+  height: 16px;
+  border: 1px solid var(--border-strong);
+  border-radius: 2px;
+  background: var(--bg-sunken);
+}
+
+.popover__cell.is-hot {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.popover__palette {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 188px;
+}
+
+.popover__colors {
+  display: flex;
+  gap: 6px;
+}
+
+.popover__swatch {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1px solid var(--border-strong);
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 35%);
+}
+
+.popover__swatch:hover {
+  transform: scale(1.08);
+}
+
+.popover__swatch.is-current {
+  outline: 2px solid var(--text-primary);
+  outline-offset: 2px;
+}
+
+.popover__custom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.popover__custom input[type='color'] {
+  width: 32px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: transparent;
+  cursor: pointer;
 }
 </style>

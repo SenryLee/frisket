@@ -13,7 +13,7 @@ import {
  * ── 为什么它排在 CLS 自验证之前并成为主门禁 ────────────────────
  *
  * MDN 兼容性表标注 **Safari 全版本不支持 `layout-shift`**。
- * macOS Tauri 用的正是 WKWebView —— Slate 唯一的首发平台上，
+ * macOS Tauri 用的正是 WKWebView —— Frisket 唯一的首发平台上，
  * CLS 分数很可能根本采不到。用一个采不到的指标当主门禁是自欺。
  *
  * 行高用 `getBoundingClientRect` 测，不依赖任何性能 API，双引擎一致。

@@ -1,6 +1,6 @@
-# Slate · 技术方案（Spec v0.1）
+# Frisket · 技术方案（Spec v0.1）
 
-> 本文是已确认的技术方案。实施节奏见 `IMPLEMENTATION-PLAN.md`，架构纪律见 `ARCHITECTURE.md`。
+> 本文是已确认的技术方案。目录见仓库根目录的 `README.md`，架构纪律见 `ARCHITECTURE.md`。
 
 ---
 
@@ -474,7 +474,7 @@ prefers-reduced-motion: reduce → 全部 1ms
 
 ### 7.1 目录结构
 
-见 `IMPLEMENTATION-PLAN.md` §1.4 的完整树。
+见仓库根目录 `README.md` 的目录一节。
 
 ### 7.2 状态管理：CodeMirror 进不了 store
 

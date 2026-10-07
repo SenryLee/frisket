@@ -28,7 +28,7 @@
 
 **页面切换 / 窗口缩放后的残影**：WebKit 透明窗口的社区已知问题，Apple 未提供公开修复方案。
 
-**架构层面的规避**：Slate 是单页应用，**不使用 vue-router**，全部视图由 store 驱动。没有路由切换就没有页面切换，从根上规避了这个残影。
+**架构层面的规避**：Frisket 是单页应用，**不使用 vue-router**，全部视图由 store 驱动。没有路由切换就没有页面切换，从根上规避了这个残影。
 
 不要为了功能方便引入路由 —— 引入前先回到这个文档确认代价。
 
@@ -67,10 +67,10 @@ WKWebView 版本 / 系统版本 / macOSPrivateApi 是否生效
 
 `macOSPrivateApi: true` 使用私有 API，**与 App Store 审核冲突**。
 
-因此 Slate **不上 App Store**，分发方式为 Developer ID 签名 + Apple 公证后的直链下载 / Homebrew Cask。README、下载页、首次启动三处都需写明。
+因此 Frisket **不上 App Store**，分发方式为 Developer ID 签名 + Apple 公证后的直链下载 / Homebrew Cask。README、下载页、首次启动三处都需写明。
 
 未签名构建首次启动时 Gatekeeper 会拦截，需在「系统设置 → 隐私与安全」放行，或：
 
 ```bash
-xattr -cr /Applications/Slate.app
+xattr -cr /Applications/Frisket.app
 ```

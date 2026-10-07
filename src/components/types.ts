@@ -1,28 +1,36 @@
 /**
- * types.ts —— 组件间共享的 UI 类型
+ * 组件间共享的 UI 类型。
  *
- * 在整体中的位置：只放跨组件传递的类型，不含任何实现。
- * 为什么单独成文件：`<script setup>` 不能写 export 语句，
- * 而 App.vue 与 Toolbar.vue 都需要 ToolbarAction 这个联合类型。
- * 放进 store 会让组件依赖状态层，破坏分层，故独立成文件。
+ * 快捷栏只表达意图。带参数的操作（标题级别、颜色、表格尺寸）
+ * 把参数放在动作里，避免工具栏直接改文档。
  */
 
-/**
- * 快捷栏能触发的编辑动作。
- *
- * 取值与 EditorHandle 的方法一一对应：加粗走 wrapSelection，
- * 表格走 insertTable。组件只表达「意图」，
- * 具体怎么实现由内核决定。
- */
+import type { AlignMode } from '@/core/format'
+
 export type ToolbarAction =
-  | 'bold'
-  | 'italic'
-  | 'strike'
-  | 'heading'
-  | 'code'
-  | 'bulletList'
-  | 'orderedList'
-  | 'quote'
-  | 'table'
-  | 'link'
-  | 'image'
+  | { id: 'undo' }
+  | { id: 'redo' }
+  | { id: 'bold' }
+  | { id: 'italic' }
+  | { id: 'strike' }
+  | { id: 'code' }
+  | { id: 'highlight' }
+  | { id: 'heading'; level: number }
+  | { id: 'quote' }
+  | { id: 'bullet' }
+  | { id: 'ordered' }
+  | { id: 'task' }
+  | { id: 'indent' }
+  | { id: 'outdent' }
+  | { id: 'hr' }
+  | { id: 'hardBreak' }
+  | { id: 'link'; text: string; url: string }
+  | { id: 'image'; alt: string; src: string }
+  | { id: 'table'; rows: number; cols: number }
+  | { id: 'align'; align: AlignMode }
+  | { id: 'color'; kind: 'text' | 'background'; color: string }
+  | { id: 'clear' }
+  | { id: 'painter' }
+
+export const TEXT_COLORS = ['#1a1a1a', '#c0392b', '#a8542a', '#2f6feb', '#2f7a4d', '#7c3aed'] as const
+export const BACKGROUND_COLORS = ['#f3e2a2', '#f8d0d0', '#d9f2e3', '#d6e6ff', '#f3d9ff', '#ffe3c4'] as const

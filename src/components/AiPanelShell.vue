@@ -28,11 +28,8 @@ function close(): void {
 
 <template>
   <!--
-    折叠态用 translateX(100%) 而非 width:0：
-    1. width 动画每帧触发布局，三栏全都要重算；
-    2. translateX 只触发合成，编辑区滚动位置不会被动。
-    收起后仍保留在 DOM 里但移出视口，
-    因此面板内部的状态（滚动位置、输入草稿）在收起时得以保留。
+    侧栏在文档流里，打开时编辑区让出宽度，不再盖住正文。
+    收起时宽度为 0，对话草稿仍留在 DOM 里。
   -->
   <aside
     class="ai-shell glass-l1 glass-l1--raised"
@@ -107,35 +104,27 @@ function close(): void {
 .ai-shell {
   display: flex;
   flex-direction: column;
-  width: var(--ai-panel-width);
+  width: 0;
+  min-width: 0;
   flex-shrink: 0;
-  /* ★ 绝对定位，不参与 flex 布局 ★
-   * 若留在 flex 流里，折叠态虽然 translateX 移出了视口，
-   * 仍会占住 380px 宽度 —— 表现为「窗口明明有 1280，
-   * 中栏却只有 700 宽」，右侧留下一片空白。
-   * 改成绝对定位后，展开时是覆盖在中栏之上，
-   * 这也符合「面板浮在内容上方」的直觉。 */
-  position: absolute;
-  top: 0;
-  right: 0;
-  bottom: 0;
+  border-radius: 0;
+  overflow: hidden;
   border-right: none;
-  /* 浮层之下必须有内容可压：面板自带 L3 玻璃与阴影，
-   * 遮住编辑区右侧不会让人困惑 */
-  z-index: var(--z-panel);
-  transform: translateX(100%);
+  border-left: 0 solid transparent;
   visibility: hidden;
+  pointer-events: none;
   transition:
-    transform var(--dur-panel-eff) var(--ease-out),
+    width var(--dur-panel-eff) var(--ease-out),
     visibility 0s linear var(--dur-panel-eff);
 }
 
 .ai-shell.is-open {
-  transform: translateX(0);
+  width: var(--ai-panel-width);
+  border-left: 1px solid var(--border-subtle);
   visibility: visible;
-  /* visibility 延迟到动画结束：收起时立刻隐藏会让动画变成「闪一下」 */
+  pointer-events: auto;
   transition:
-    transform var(--dur-panel-eff) var(--ease-out),
+    width var(--dur-panel-eff) var(--ease-out),
     visibility 0s;
 }
 
@@ -177,8 +166,14 @@ function close(): void {
 .ai-shell__body {
   flex: 1;
   min-height: 0;
-  overflow-y: auto;
-  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.ai-shell__body > :deep(*) {
+  flex: 1;
+  min-height: 0;
 }
 
 .ai-shell__placeholder {

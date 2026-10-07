@@ -33,19 +33,17 @@ export default defineConfig(({ mode }) => ({
     minify: 'esbuild',
     sourcemap: false,
     reportCompressedSize: true,
-    // 体积门禁：超过阈值时构建失败而非静默通过
-    chunkSizeWarningLimit: 400,
+    // 编辑器是一个包，压缩前大约 570 kB。再涨一截才警告。
+    chunkSizeWarningLimit: 600,
     rollupOptions: {
       output: {
-        manualChunks: {
-          'editor-codemirror': [
-            '@codemirror/state',
-            '@codemirror/view',
-            '@codemirror/commands',
-            '@codemirror/language',
-            '@codemirror/search',
-          ],
-          'editor-markdown': ['@codemirror/lang-markdown', '@lezer/highlight'],
+        // CodeMirror 和 Lezer 会互相引用。拆成两个 chunk 会在生产包里
+        // 形成环，启动时抛出 “Cannot access before initialization”，
+        // 页面停在空的主题底色上。编辑器代码仍单独成包，只是不再对拆。
+        manualChunks(id) {
+          if (id.includes('node_modules/@codemirror/') || id.includes('node_modules/@lezer/')) {
+            return 'editor'
+          }
         },
       },
     },

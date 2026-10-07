@@ -91,9 +91,11 @@ html[data-glass='none'] {
   --glass-l1-sat: 100%;
   --glass-l3-blur: 0px;
   --glass-l3-sat: 100%;
-  --glass-l1-alpha: 1;
-  --glass-l2-alpha: 1;
-  --glass-l3-alpha: 1;
+  /* !important：皮肤滑杆把透明度写在 html 的内联变量上，
+   * 不用 important 的话，关掉玻璃后编辑区仍会透出桌面。 */
+  --glass-l1-alpha: 1 !important;
+  --glass-l2-alpha: 1 !important;
+  --glass-l3-alpha: 1 !important;
 }
 
 html[data-glass='none'] .glass-l1,
@@ -125,9 +127,9 @@ html[data-glass='none'] .glass-l1--raised {
  * 任意 glass 模式之上（用户不关玻璃，只是不想要半透明）。
  * ============================================================ */
 html[data-force-opaque='true'] {
-  --glass-l1-alpha: 1;
-  --glass-l2-alpha: 1;
-  --glass-l3-alpha: 1;
+  --glass-l1-alpha: 1 !important;
+  --glass-l2-alpha: 1 !important;
+  --glass-l3-alpha: 1 !important;
 }
 
 html[data-force-opaque='true'] .glass-l1,
@@ -162,9 +164,9 @@ html[data-force-opaque='true'] .glass-l3 {
  * 因此浏览器下走不透明路径 —— 这不是降级，这是本来就没有玻璃。
  * ============================================================ */
 html[data-runtime='browser'] {
-  --glass-l1-alpha: 1;
-  --glass-l2-alpha: 1;
-  --glass-l3-alpha: 1;
+  --glass-l1-alpha: 1 !important;
+  --glass-l2-alpha: 1 !important;
+  --glass-l3-alpha: 1 !important;
 }
 
 html[data-runtime='browser'] .glass-l1,

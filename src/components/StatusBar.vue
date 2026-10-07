@@ -48,7 +48,7 @@ const selectionText = computed(() =>
 /** 模式徽标。设置面板在 M1 之前不可用，状态栏是这些开关的唯一可见出口 */
 const modeText = computed(() => {
   const modes: string[] = []
-  if (store.editor.typewriterMode) modes.push('打字机')
+  if (store.editor.typewriterMode) modes.push('行居中')
   if (store.editor.readOnly) modes.push('只读')
   return modes.join(' · ')
 })
@@ -73,7 +73,14 @@ const modeText = computed(() => {
       </span>
       <span class="status-bar__item status-bar__item--muted">{{ cursorText }}</span>
       <span
-        v-if="store.editor.dirty"
+        v-if="store.docs.saveError"
+        class="status-bar__badge status-bar__badge--dirty"
+        :title="store.docs.saveError"
+      >
+        保存失败
+      </span>
+      <span
+        v-else-if="store.editor.dirty"
         class="status-bar__badge status-bar__badge--dirty"
         title="有未保存的修改"
       >

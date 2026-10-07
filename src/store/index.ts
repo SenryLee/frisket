@@ -24,6 +24,9 @@ import { ai } from './ai'
 import { appearance } from './appearance'
 import { docs, loadHistory } from './docs'
 import { editor, setTypographyApplier } from './editor'
+import { folders } from './folders'
+import { library } from './library'
+import { wallpaper } from './wallpaper'
 
 /**
  * EditorHandle 的 provide / inject 键。
@@ -58,6 +61,9 @@ export interface Store {
   docs: typeof docs
   editor: typeof editor
   ai: typeof ai
+  folders: typeof folders
+  library: typeof library
+  wallpaper: typeof wallpaper
   /** 侧栏是否折叠。不放appearance —— 它是布局状态不是外观设置 */
   sidebarCollapsed: boolean
   /** AI 面板当前的实际展开态，与 ai.open 同源，抽出来供布局层直接用 */
@@ -87,6 +93,9 @@ const storeInstance: Store = {
   docs,
   editor,
   ai,
+  folders,
+  library,
+  wallpaper,
   get sidebarCollapsed(): boolean {
     return state.sidebarCollapsed
   },
@@ -113,6 +122,9 @@ export function useStore(): Store {
  */
 export function initStore(): void {
   appearance.init()
+  folders.load()
+  library.load()
+  wallpaper.init()
   // 装配排版写入器：editor.setPref 改字号时要能写CSS 变量，
   // 但 editor.ts 不能 import appearance（会形成循环依赖），
   // 因此由这里这个「知道全部模块」的地方接上。
@@ -120,5 +132,5 @@ export function initStore(): void {
   appearance.applyEditorTypography(editor.getPrefsSnapshot())
 }
 
-export { ai, appearance, docs, editor, loadHistory }
+export { ai, appearance, docs, editor, library, loadHistory }
 export type { DocumentMeta } from '@/core/interfaces'

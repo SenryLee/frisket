@@ -14,6 +14,7 @@
 
 import { reactive } from 'vue'
 import type { AiAction, AiErrorCode } from '@/core/interfaces'
+import { beginDocumentSession, decideAutoOpen } from '@/core/aiSession'
 
 const state = reactive<{
   /** 面板是否展开 */
@@ -28,6 +29,11 @@ const state = reactive<{
   error: { message: string; code: AiErrorCode } | null
   /** 尚未划选正文时给出引导，而非让面板空着 */
   awaitingSelection: boolean
+  /** 这份文档本次打开已经自动展开过 */
+  autoOpened: boolean
+  /** 用户这次手动关上过。关上之后不再自动打开。 */
+  dismissed: boolean
+  docKey: string | null
 }>({
   open: false,
   streaming: false,
@@ -35,6 +41,9 @@ const state = reactive<{
   pendingAction: null,
   error: null,
   awaitingSelection: false,
+  autoOpened: false,
+  dismissed: false,
+  docKey: null,
 })
 
 export const ai = {
@@ -67,9 +76,32 @@ export const ai = {
     return !state.streaming && state.error === null
   },
 
-  /** 展开面板。与 toggle 分开是因为「确保展开」的语义更常用 */
+  /** 用户要求打开。手动打开后，这次不再当成「还没自动打开过」。 */
   show(): void {
     state.open = true
+    state.dismissed = false
+    state.autoOpened = true
+  },
+
+  /**
+   * 这份文档第一次划选时打开。
+   * 已经开着，或用户这次手动关过，就什么也不做。
+   */
+  requestAutoOpen(): void {
+    const next = decideAutoOpen(state)
+    if (next === null) return
+    state.open = next.open
+    state.dismissed = next.dismissed
+    state.autoOpened = next.autoOpened
+  },
+
+  /** 换了一份文档。关着的侧栏可以再自动打开一次。 */
+  beginDocument(key: string): void {
+    if (state.docKey === key) return
+    state.docKey = key
+    const next = beginDocumentSession(state.open)
+    state.dismissed = next.dismissed
+    state.autoOpened = next.autoOpened
   },
 
   /**
@@ -79,15 +111,16 @@ export const ai = {
    * 而那个错误对应的上下文已经不存在了。
    */
   toggle(): void {
-    state.open = !state.open
-    if (!state.open) {
-      state.error = null
-      state.awaitingSelection = false
+    if (state.open) {
+      this.close()
+      return
     }
+    this.show()
   },
 
   close(): void {
     state.open = false
+    state.dismissed = true
     state.error = null
     state.awaitingSelection = false
   },

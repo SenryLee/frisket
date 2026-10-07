@@ -91,14 +91,14 @@ export function buildLinkInsertion(
   const main = state.selection.main
   const selected = state.doc.sliceString(main.from, main.to)
   const prefix = isImage ? '![' : '['
-  const closeBracket = isImage ? '](url)' : '](url)'
+  const href = url.trim()
 
   if (selected !== '') {
-    const insert = `${prefix}${selected}${closeBracket}`
+    const insert = `${prefix}${selected}](${href})`
+    const urlFrom = main.from + prefix.length + selected.length + 2
     return {
       changes: { from: main.from, to: main.to, insert },
-      // 选区整体保持选中，用户接着就能改文字部分
-      selection: { anchor: main.from, head: main.from + insert.length },
+      selection: { anchor: urlFrom, head: urlFrom + href.length },
     }
   }
 

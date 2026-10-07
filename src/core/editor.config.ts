@@ -17,6 +17,7 @@ import {
   keymap,
   drawSelection,
   highlightSpecialChars,
+  placeholder,
   lineNumbers as lineNumbersGutter,
 } from '@codemirror/view'
 import type { Extension } from '@codemirror/state'
@@ -28,6 +29,8 @@ import { closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete'
 import { lintKeymap } from '@codemirror/lint'
 import { slateTheme } from '@/editor/theme'
 import { markdownKeymap } from '@/editor/keys'
+import { formatKeymap } from '@/editor/format-keys'
+import { colorField, colorTheme } from '@/editor/live/field.color'
 import { layoutField } from '@/editor/live/field.layout'
 import { inlineField } from '@/editor/live/field.inline'
 import { revealField } from '@/editor/live/field.reveal'
@@ -93,6 +96,8 @@ export function baseExtensions(options: BaseExtensionOptions): Extension[] {
     revealField,
     inlineField,
     stylingPlugin,
+    colorField,
+    colorTheme,
     statsField,
 
     // ── 编辑基础 ──
@@ -104,7 +109,9 @@ export function baseExtensions(options: BaseExtensionOptions): Extension[] {
     // markdownKeymap 在前（Prec.highest），通用键位在后。
     // 这不是巧合：Markdown 语义键位必须在 Enter 上压过默认换行。
     markdownKeymap,
+    formatKeymap,
     Prec.lowest(keymap.of([...defaultKeymap, ...historyKeymap, ...searchKeymap])),
+    placeholder('从这里开始写。选中文字后，快捷栏会跟到光标旁边。'),
     // closeBracketsKeymap / lintKeymap 是导出的键位数组，不是 Extension ——
     // 数组里的 KeyBinding 只有绑上 keymap facet 才成为扩展，故必须包一层 keymap.of()。
     // lintKeymap 只提供键位（打开 lint 面板），不带 linter 本身：
