@@ -11,9 +11,7 @@
  *    Pinia 提供的抽象就只剩下「多写一层defineStore」的收益。
  * 2. 状态量很小：主题、玻璃、文档列表、当前文档、编辑区统计、
  *    AI 面板开关。一个 reactive 对象 + 一个 getter 就够。
- * 3. 依赖纪律：Plan 里明确「不擅自引入依赖」。
- *
- * 详见 docs/ARCHITECTURE.md「状态管理：为什么不用 Pinia」。
+ * 3. 依赖纪律：不擅自引入依赖。一个 reactive 对象够用，不再加 Pinia。
  */
 
 import { reactive } from 'vue'

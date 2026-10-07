@@ -1,8 +1,4 @@
 <p align="center">
-  <img src="brand/frisket-mark.svg" width="88" alt="Frisket mark">
-</p>
-
-<p align="center">
   <img src="brand/frisket-card.svg" width="560" alt="Frisket">
 </p>
 
@@ -85,7 +81,7 @@ Pinned folders fold level by level. Removing one from the list leaves the files 
 
 Four appearances: Ink, Graphite, Sepia, and Neon Glass. Ink and Graphite can follow the system light and dark setting. Settings also change type size, foreground color, glass opacity, and the wallpaper.
 
-macOS 26 and later use liquid glass. Earlier releases use the HUD material. The title bar is transparent and drags the window. If the glass turns white or the edges slip, turn transparency off in Settings. The checks are in [`docs/GLASS-CHECKLIST.md`](docs/GLASS-CHECKLIST.md).
+macOS 26 and later use liquid glass. Earlier releases use the HUD material. The title bar is transparent and drags the window. If the glass turns white or the edges slip, turn transparency off in Settings. The surface becomes opaque, and the app does not need a restart.
 
 Typewriter mode keeps the line you are writing in the middle of the view. It scrolls. It does not change the Markdown.
 
@@ -140,34 +136,93 @@ The commit hook stops a change that looks like a secret. A false positive can us
 
 ## What is in the repository
 
-The repository holds what you need to build the app again.
+The repository holds the source needed to build the app again. The column on the right of GitHub’s file list is the latest commit title, not a description of that file. What each path does is written here.
 
-| Path | What it holds |
+### Root
+
+| Path | What it does |
 |---|---|
-| `brand/` | The mark, the wordmark, and the light card used in this README |
-| `src/` | The interface, the editor, and UI state |
-| `src-tauri/` | The window, files, history, Keychain, AI requests, and the app icon |
-| `docs/` | The spec, the architecture notes, and the glass checklist |
-| `tests/` | Unit tests, plus browser checks for layout and input |
-| `public/` | The page icon |
+| `.githooks/` | A secret check before each commit. `pre-commit` looks through staged text for key prefixes and private-key blocks. Turn it on with `git config core.hooksPath .githooks`. |
+| `brand/` | The product art: the mark, the wordmark, and the light card used in this page. |
+| `public/` | The browser-tab icon used while developing. `favicon.svg` points at the mark. The icon inside the Mac app comes from `src-tauri/icons/`, not from here. |
+| `src/` | The interface and the editor, in Vue 3 and TypeScript. |
+| `src-tauri/` | The window, files, Keychain, and AI requests, in Rust. |
+| `tests/` | Checks that run without the installer: unit tests, plus browser checks for layout and input. |
+| `.gitignore` | Dependencies, build output, keys, local notes, and design notes. None of these enter git. |
+| `LICENSE` | The full MIT license. |
+| `README.md` | This guide in Chinese. GitHub shows it on the repository home. |
+| `README.en.md` | The same guide in English. |
+| `index.html` | The page loaded inside the desktop window. Vite mounts `src/main.ts` from here. |
+| `gate.html` | A page that mounts only the editor kernel. In development it is `/gate.html`, used to check layout and input. It is not the writing screen. |
+| `package.json` | Frontend dependencies and commands. `npm test` runs the unit tests, `npm run app:dev` opens the window, and `npm run app:build` makes the installer. The version is 1.0.0. |
+| `package-lock.json` | The exact npm lock. After a clone, `npm install` uses it to fetch the same set. |
+| `tsconfig.json` | TypeScript options, and the `@/` alias that points at `src/`. |
+| `vite.config.ts` | The dev server and the frontend bundle. Editor packages go into one `editor` chunk. |
+| `vitest.config.ts` | The unit-test scope. It runs `tests/unit` only. |
+| `playwright.config.ts` | The browser checks for layout shift and for dropped input-method characters. |
 
-These stay out of git:
+### `brand/`
+
+| File | What it does |
+|---|---|
+| `frisket-mark.svg` | The mark: two rounded squares overlapping. The app icon is generated from it. |
+| `frisket-lockup.svg` | The mark plus the Frisket wordmark, on a transparent background. |
+| `frisket-card.svg` | The same art on a light rounded card. This page uses it, so the word stays readable on a dark background. |
+
+### `src/`
+
+| Path | What it does |
+|---|---|
+| `App.vue` | The three columns: sidebar, editor, and the AI pane. It also handles ⌘N, ⌘O, ⌘S, ⌘J, and ⌘\\. |
+| `main.ts` | Mounts Vue. There is no router, so a transparent window does not leave a ghost when a page would have changed. |
+| `env.d.ts` | Types for Vite and for Vue single-file components. |
+| `components/` | The visible controls: toolbar, sidebar, folder tree, title bar, settings, the following bar, the AI pane, and the save-folder picker. |
+| `core/` | Rules kept apart from the screen: formatting, Return, filenames, pinned folders, the last five save folders, the AI session, and the provider list. |
+| `editor/` | CodeMirror 6. Live typesetting, shortcuts, and color. The document stays plain Markdown. |
+| `store/` | UI state: theme, history, autosave, sidebar folders, skin, wallpaper, and AI. The document text does not live here. |
+| `ipc/commands.ts` | The command names the interface sends to Rust. Both sides share one list. |
+| `styles/` | The four appearances, the glass, the sidebar, and type size. |
+| `test-utils/` | A small helper that measures line height in tests. It is not in the installer. |
+
+### `src-tauri/`
+
+| Path | What it does |
+|---|---|
+| `src/main.rs` | The process entry. |
+| `src/lib.rs` | Registers commands and the window. On the first launch it copies history and API settings from an older Slate folder when that folder is still on the Mac. |
+| `src/files.rs` | Open, save, rename, list Markdown in a folder, and reveal a file in Finder. |
+| `src/ai.rs` | Sends a conversation to the endpoint the user configured. The key is read from the Keychain. The page cannot read it. |
+| `src/glass/` | Picks liquid glass, the HUD material, or a fully opaque surface from the system version. |
+| `tauri.conf.json` | Window size, the transparent title bar, macOS 13 as the minimum, and the `.app` and `.dmg` bundles. |
+| `Cargo.toml`, `Cargo.lock` | Rust dependencies, locked to exact versions. |
+| `capabilities/default.json` | Which system capabilities this window may use. |
+| `build.rs` | Tauri’s build script. |
+| `icons/` | Icons at the sizes each platform asks for. The Mac installer uses `icon.icns`. |
+
+### `tests/`
+
+| Path | What it does |
+|---|---|
+| `unit/` | Formatting, Return, the folder tree, and render checks. No window. |
+| `e2e/` | Playwright checks for layout shift and for dropped input-method characters. |
+| `fixtures/` | Sample Markdown used by those checks. |
+| `README.md` | How to run the checks. |
+
+### Left out of git
+
+These stay on the machine that builds Frisket, or they live only on the Release. A finished installer still opens, writes, and saves when they are absent.
 
 | Left out | Why |
 |---|---|
-| `node_modules/` | Restored with `npm install` |
-| `dist/` | The frontend build, produced again at package time |
-| `src-tauri/target/` | The Rust build cache, measured in gigabytes |
-| `src-tauri/gen/` | Schemas generated by Tauri |
-| `.env`, keys, certificates | Keys stay in the Keychain |
-| Test reports, Playwright browsers, editor scratch files | Local caches |
-| The `.dmg` and `.app` | Attached to [Releases](https://github.com/SenryLee/frisket/releases/tag/v1.0.0), not stored in git history |
-
-Further reading:
-
-- [`docs/SPEC.md`](docs/SPEC.md)
-- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
-- [`docs/GLASS-CHECKLIST.md`](docs/GLASS-CHECKLIST.md)
+| `docs/` | Design notes: the spec, the architecture, and the glass checklist. They are for writing the app. The running app does not read them. |
+| `node_modules/` | Restored with `npm install`. |
+| `dist/` | The frontend build. It is produced again at package time and written into the installer. |
+| `src-tauri/target/` | The Rust build cache, measured in gigabytes. |
+| `src-tauri/gen/` | Schemas Tauri generates again during a build. |
+| `.env`, keys, certificates | Keys stay in the Keychain. The repository contains nobody’s key. |
+| Test reports, Playwright browsers, editor scratch files | Local caches. |
+| `.workbuddy/`, `.verify/` | Local notes and a temporary comparison test. |
+| The `.dmg` and `.app` | Attached to [Releases](https://github.com/SenryLee/frisket/releases/tag/v1.0.0). That one file is enough to use the app. Cloning the repository is not required. |
 
 ## License
 

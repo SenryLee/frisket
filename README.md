@@ -1,8 +1,4 @@
 <p align="center">
-  <img src="brand/frisket-mark.svg" width="88" alt="Frisket 标志">
-</p>
-
-<p align="center">
   <img src="brand/frisket-card.svg" width="560" alt="Frisket">
 </p>
 
@@ -85,7 +81,7 @@ Intel 芯片的 Mac 不能直接用这个安装包。需要的话，在那台机
 
 四种外观：墨纸、石墨、暖米、霓虹玻璃。墨纸和石墨可以跟着系统的浅色和深色走。设置里还能改字号、字色、玻璃透度和壁纸。
 
-macOS 26 及以上用液态玻璃，更早的系统用 HUD 毛玻璃。标题栏是透明的，可以拖动窗口。玻璃发白或边缘错位时，到设置里关掉透明。排查步骤在 [`docs/GLASS-CHECKLIST.md`](docs/GLASS-CHECKLIST.md)。
+macOS 26 及以上用液态玻璃，更早的系统用 HUD 毛玻璃。标题栏是透明的，可以拖动窗口。玻璃发白或边缘错位时，到设置里关掉透明，界面会改成不透明的底，不用重启。
 
 打字机模式把正在写的那一行留在画面中间。它只滚动视图，不改 Markdown。
 
@@ -140,34 +136,93 @@ npm run app:build
 
 ## 仓库里有什么
 
-进仓库的是能重新做出这个应用的东西。
+进仓库的是重新做出这个应用所需要的源码。文件列表右边那一列是 GitHub 记下的最近一次提交标题，不是这个文件的简介。每个路径做什么，写在下面。
 
-| 路径 | 内容 |
+### 根目录
+
+| 路径 | 做什么 |
 |---|---|
-| `brand/` | 标志、字标，以及 README 用的浅色底卡片 |
-| `src/` | 界面、编辑器、状态 |
-| `src-tauri/` | 窗口、文件、历史、钥匙串、AI 请求、应用图标 |
-| `docs/` | 技术方案、架构、玻璃排查 |
-| `tests/` | 单元测试，以及浏览器里的排版和输入检查 |
-| `public/` | 页面图标 |
+| `.githooks/` | 提交前的密钥检查。`pre-commit` 查看暂存内容里有没有密钥前缀或私钥。启用方式是 `git config core.hooksPath .githooks`。 |
+| `brand/` | 产品图形。标志、字标，以及这份说明用的浅色卡片。 |
+| `public/` | 开发时浏览器标签上的图标。`favicon.svg` 指向标志。装进 Mac 应用的图标在 `src-tauri/icons/`，不在这里。 |
+| `src/` | 界面和编辑器，用 Vue 3 与 TypeScript 写。 |
+| `src-tauri/` | 窗口、文件、钥匙串和 AI 请求，用 Rust 写。 |
+| `tests/` | 不打开安装包也能跑的检查：单元测试，以及浏览器里的排版和输入法。 |
+| `.gitignore` | 依赖、编译结果、密钥、本机笔记和设计文档，这些不进 git。 |
+| `LICENSE` | MIT 许可的全文。 |
+| `README.md` | 这份中文说明。打开仓库时 GitHub 显示它。 |
+| `README.en.md` | 同一份说明的英文版。 |
+| `index.html` | 桌面窗口里的页面入口。Vite 从这里挂上 `src/main.ts`。 |
+| `gate.html` | 只挂编辑内核的检查页。开发时地址是 `/gate.html`，用来看排版和输入法，不是日常写作界面。 |
+| `package.json` | 前端依赖和命令。`npm test` 跑单元测试，`npm run app:dev` 开窗口，`npm run app:build` 打安装包。版本是 1.0.0。 |
+| `package-lock.json` | npm 的精确版本锁。克隆之后 `npm install` 靠它装到同一套依赖。 |
+| `tsconfig.json` | TypeScript 的编译选项，并把 `@/` 指到 `src/`。 |
+| `vite.config.ts` | 开发服务器和前端打包。编辑器相关的包打进同一个 `editor` 块。 |
+| `vitest.config.ts` | 单元测试的范围，只跑 `tests/unit`。 |
+| `playwright.config.ts` | 浏览器检查的配置，覆盖排版是否跳动、输入法会不会丢字。 |
 
-这些不进仓库，也不该进：
+### `brand/`
+
+| 文件 | 做什么 |
+|---|---|
+| `frisket-mark.svg` | 标志，两块叠在一起的圆角方形。应用图标从它生成。 |
+| `frisket-lockup.svg` | 标志加上 Frisket 字标，底是透明的。 |
+| `frisket-card.svg` | 同一套图形放在浅色圆角底上。这份说明用它，深色页面里字仍然看得见。 |
+
+### `src/`
+
+| 路径 | 做什么 |
+|---|---|
+| `App.vue` | 三栏布局：侧栏、编辑区、右侧 AI。也处理 ⌘N、⌘O、⌘S、⌘J 和 ⌘\。 |
+| `main.ts` | 挂上 Vue。不用路由，避免透明窗口在换页时留下残影。 |
+| `env.d.ts` | Vite 和 Vue 单文件组件的类型声明。 |
+| `components/` | 看得到的控件：工具栏、侧栏、文件夹树、标题栏、设置、跟随条、AI 面板、保存位置。 |
+| `core/` | 和界面分开的规则：格式、换行、文件名、常用文件夹、最近五个保存位置、AI 会话和厂商。 |
+| `editor/` | CodeMirror 6。实时排版、快捷键和颜色。正文始终是纯 Markdown。 |
+| `store/` | 界面状态：主题、历史、自动保存、侧栏文件夹、皮肤、壁纸、AI。正文不放在这里。 |
+| `ipc/commands.ts` | 前端调用 Rust 时用的命令名。两边认同一份名单。 |
+| `styles/` | 四套外观、玻璃、侧栏和字号。 |
+| `test-utils/` | 测试里量行高用的小工具。不进安装包。 |
+
+### `src-tauri/`
+
+| 路径 | 做什么 |
+|---|---|
+| `src/main.rs` | 程序入口。 |
+| `src/lib.rs` | 登记命令和窗口。第一次打开时，如果本机还有以前 Slate 的历史和接口设置，从那里复制一份。 |
+| `src/files.rs` | 打开、保存、重命名、列出文件夹里的 Markdown，以及在 Finder 中显示。 |
+| `src/ai.rs` | 把对话发到用户自己配置的接口。密钥从钥匙串读取，页面读不到。 |
+| `src/glass/` | 按系统版本选用液态玻璃、HUD 毛玻璃，或完全不透明。 |
+| `tauri.conf.json` | 窗口大小、透明标题栏、最低 macOS 13，以及打成 `.app` 和 `.dmg`。 |
+| `Cargo.toml`、`Cargo.lock` | Rust 依赖，以及锁住的精确版本。 |
+| `capabilities/default.json` | 这个窗口被允许使用的系统能力。 |
+| `build.rs` | Tauri 的构建脚本。 |
+| `icons/` | 各尺寸图标。macOS 安装包使用其中的 `icon.icns`。 |
+
+### `tests/`
+
+| 路径 | 做什么 |
+|---|---|
+| `unit/` | 格式、换行、文件夹树和渲染结果。不打开窗口。 |
+| `e2e/` | 用 Playwright 看排版会不会跳、输入法会不会丢字。 |
+| `fixtures/` | 这些检查用的样例 Markdown。 |
+| `README.md` | 这些检查怎么跑。 |
+
+### 不进仓库
+
+这些留在本机或只出现在 Release 里。缺了它们，已经打好的安装包仍然能打开、能写、能保存。
 
 | 不入库 | 原因 |
 |---|---|
-| `node_modules/` | 用 `npm install` 装回来 |
-| `dist/` | 前端构建结果，打包时重新生成 |
-| `src-tauri/target/` | Rust 编译缓存，体积以 GB 计 |
-| `src-tauri/gen/` | Tauri 生成的模式文件 |
-| `.env`、密钥、证书 | 密钥只留在钥匙串 |
-| 测试报告、Playwright 浏览器、编辑器临时文件 | 本机缓存 |
-| 安装包 `.dmg` / `.app` | 放在 [Releases](https://github.com/SenryLee/frisket/releases/tag/v1.0.0)，不放进 git 历史 |
-
-更细的说明：
-
-- [`docs/SPEC.md`](docs/SPEC.md)
-- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
-- [`docs/GLASS-CHECKLIST.md`](docs/GLASS-CHECKLIST.md)
+| `docs/` | 设计笔记，包括方案、架构和玻璃排查。给编写时对照，应用运行时不读。 |
+| `node_modules/` | 用 `npm install` 装回来。 |
+| `dist/` | 前端构建结果。打包时重新生成，并写进安装包。 |
+| `src-tauri/target/` | Rust 编译缓存，体积以 GB 计。 |
+| `src-tauri/gen/` | Tauri 生成的模式文件，构建时会再生。 |
+| `.env`、密钥、证书 | 密钥只留在钥匙串。仓库里没有任何人的密钥。 |
+| 测试报告、Playwright 浏览器、编辑器临时文件 | 本机缓存。 |
+| `.workbuddy/`、`.verify/` | 本机笔记和临时对照测试。 |
+| 安装包 `.dmg` / `.app` | 放在 [Releases](https://github.com/SenryLee/frisket/releases/tag/v1.0.0)。下载那一个文件就能用，不需要再克隆仓库。 |
 
 ## 许可
 
