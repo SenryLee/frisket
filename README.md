@@ -12,13 +12,13 @@
   &nbsp;·&nbsp;
   <a href="#下载试用">下载试用</a>
   &nbsp;·&nbsp;
-  <a href="https://github.com/SenryLee/frisket/releases/tag/v1.1.1">Release</a>
+  <a href="https://github.com/SenryLee/frisket/releases/tag/v1.1.0">Release</a>
 </p>
 
 <p align="center">
   <img alt="macOS 13 及以上" src="https://img.shields.io/badge/macOS-13%2B-D97757">
   <img alt="Apple 芯片" src="https://img.shields.io/badge/Apple_Silicon-arm64-1A1816">
-  <img alt="版本 1.1.1" src="https://img.shields.io/badge/release-v1.1.1-D97757">
+  <img alt="版本 1.1.0" src="https://img.shields.io/badge/release-v1.1.0-D97757">
   <img alt="MIT" src="https://img.shields.io/badge/license-MIT-8C847C">
 </p>
 
@@ -29,9 +29,9 @@
 这一版给 **Apple 芯片** 的 Mac。系统需要 **macOS 13** 或更高。安装包没有经过 Apple 签名，第一次打开要手动放行。
 
 <p align="center">
-  <a href="https://github.com/SenryLee/frisket/releases/download/v1.1.1/Frisket_1.1.1_aarch64.dmg"><strong>下载 Frisket 1.1.1</strong></a>
+  <a href="https://github.com/SenryLee/frisket/releases/download/v1.1.0/Frisket_1.1.0_aarch64.dmg"><strong>下载 Frisket 1.1.0</strong></a>
   <br>
-  <sub><code>Frisket_1.1.1_aarch64.dmg</code> · 也可到 <a href="https://github.com/SenryLee/frisket/releases/tag/v1.1.1">Releases</a> 页面下载</sub>
+  <sub><code>Frisket_1.1.0_aarch64.dmg</code> · 也可到 <a href="https://github.com/SenryLee/frisket/releases/tag/v1.1.0">Releases</a> 页面下载</sub>
 </p>
 
 1. 打开下载的磁盘映像，把 **Frisket** 拖进「应用程序」。不要在映像窗口里直接双击 Frisket。
@@ -155,7 +155,7 @@ npm run app:build
 | `README.en.md` | 同一份说明的英文版，功能和路径与中文对齐，不另写一套。 |
 | `index.html` | 桌面窗口实际加载的页面。Vite 从这里挂上 `src/main.ts`，写作界面从这一页进来。 |
 | `gate.html` | 只挂编辑内核的检查页，开发时打开 `/gate.html`。用来看排版和输入法，不是日常写作的窗口。 |
-| `package.json` | 前端依赖和命令。`npm test` 跑单元测试，`npm run app:dev` 开窗口，`npm run app:build` 打安装包。当前版本是 1.1.1。 |
+| `package.json` | 前端依赖和命令。`npm test` 跑单元测试，`npm run app:dev` 开窗口，`npm run app:build` 打安装包。当前版本是 1.1.0。 |
 | `package-lock.json` | npm 的精确版本锁。克隆之后 `npm install` 按它装到同一套依赖，避免各台机器上的包版本不一致。 |
 | `tsconfig.json` | TypeScript 的编译选项。`@/` 指向 `src/`。这里只做类型检查，不另产出一份 js。 |
 | `vite.config.ts` | 开发服务器和前端打包。`@codemirror` 与 `@lezer` 打进同一个 `editor` 块，避免安装包打开后白屏。 |
@@ -242,7 +242,7 @@ npm run app:build
 | `.env`、密钥、证书 | 密钥只留在钥匙串。仓库里没有任何人的密钥。 |
 | 测试报告、Playwright 浏览器、编辑器临时文件 | 本机缓存。 |
 | `.workbuddy/`、`.verify/` | 本机笔记和临时对照测试。 |
-| 安装包 `.dmg` / `.app` | 放在 [Releases](https://github.com/SenryLee/frisket/releases/tag/v1.1.1)。下载那一个文件就能用，不需要再克隆仓库。 |
+| 安装包 `.dmg` / `.app` | 放在 [Releases](https://github.com/SenryLee/frisket/releases/tag/v1.1.0)。下载那一个文件就能用，不需要再克隆仓库。 |
 
 ## 许可
 
