@@ -136,30 +136,30 @@ The commit hook stops a change that looks like a secret. A false positive can us
 
 ## What is in the repository
 
-The repository holds the source needed to build the app again. The column on the right of GitHub’s file list is the latest commit title, not a description of that file. What each path does is written here.
+The repository holds the source needed to build the app again. The middle column of GitHub’s file list is the latest commit title, filled in automatically. It is not a per-file description, and it cannot be edited on its own. What each path does is written here.
 
 ### Root
 
 | Path | What it does |
 |---|---|
-| `.githooks/` | A secret check before each commit. `pre-commit` looks through staged text for key prefixes and private-key blocks. Turn it on with `git config core.hooksPath .githooks`. |
-| `brand/` | The product art: the mark, the wordmark, and the light card used in this page. |
-| `public/` | The browser-tab icon used while developing. `favicon.svg` points at the mark. The icon inside the Mac app comes from `src-tauri/icons/`, not from here. |
-| `src/` | The interface and the editor, in Vue 3 and TypeScript. |
-| `src-tauri/` | The window, files, Keychain, and AI requests, in Rust. |
-| `tests/` | Checks that run without the installer: unit tests, plus browser checks for layout and input. |
-| `.gitignore` | Dependencies, build output, keys, local notes, and design notes. None of these enter git. |
-| `LICENSE` | The full MIT license. |
-| `README.md` | This guide in Chinese. GitHub shows it on the repository home. |
-| `README.en.md` | The same guide in English. |
-| `index.html` | The page loaded inside the desktop window. Vite mounts `src/main.ts` from here. |
-| `gate.html` | A page that mounts only the editor kernel. In development it is `/gate.html`, used to check layout and input. It is not the writing screen. |
+| `.githooks/` | Scripts that run before a commit. `pre-commit` rejects staged text that looks like a key or a private key. After cloning, run `git config core.hooksPath .githooks`. |
+| `brand/` | Source art for the mark: two overlapping rounded squares, the wordmark, and the light card at the top of this page. Sized app icons are generated from the mark and live in `src-tauri/icons/`. |
+| `public/` | `favicon.svg` for the browser tab during development. The Mac app icon is not taken from here. |
+| `src/` | The window UI and the editor, in Vue 3 and TypeScript. The sidebar, toolbar, outline, typesetting, and the four appearances are bundled from here. |
+| `src-tauri/` | The desktop shell, in Rust. It opens the window, reads and writes files, reads the Keychain, and sends AI requests for the page. The page cannot see the key. |
+| `tests/` | Checks that run without launching the installer. `unit/` checks formatting and the outline in Node. `e2e/` checks layout and input in a browser. |
+| `.gitignore` | Paths that stay out of git: dependencies, build output, keys, local notes, and the design notes in `docs/`. |
+| `LICENSE` | The full MIT license. Use, modification, and redistribution keep this license with the work. |
+| `README.md` | This guide in Chinese. GitHub shows it on the repository home, including the download steps and this catalog. |
+| `README.en.md` | The same guide in English. Features and paths match the Chinese page. |
+| `index.html` | The page the desktop window loads. Vite mounts `src/main.ts` from here. |
+| `gate.html` | A page that mounts only the editor kernel, at `/gate.html` during development. It checks layout and input. It is not the writing screen. |
 | `package.json` | Frontend dependencies and commands. `npm test` runs the unit tests, `npm run app:dev` opens the window, and `npm run app:build` makes the installer. The version is 1.1.0. |
-| `package-lock.json` | The exact npm lock. After a clone, `npm install` uses it to fetch the same set. |
-| `tsconfig.json` | TypeScript options, and the `@/` alias that points at `src/`. |
-| `vite.config.ts` | The dev server and the frontend bundle. Editor packages go into one `editor` chunk. |
-| `vitest.config.ts` | The unit-test scope. It runs `tests/unit` only. |
-| `playwright.config.ts` | The browser checks for layout shift and for dropped input-method characters. |
+| `package-lock.json` | The exact npm lock. After a clone, `npm install` fetches this same set. |
+| `tsconfig.json` | TypeScript options. `@/` points at `src/`. This checks types and does not emit a separate JavaScript build. |
+| `vite.config.ts` | The dev server and the frontend bundle. `@codemirror` and `@lezer` share one `editor` chunk, so the installed app does not open blank. |
+| `vitest.config.ts` | The unit-test scope. It runs `tests/unit` only. Browser layout checks start elsewhere. |
+| `playwright.config.ts` | Browser checks for line-height changes when markers show or hide, and for dropped input-method characters. |
 
 ### `brand/`
 
@@ -173,16 +173,35 @@ The repository holds the source needed to build the app again. The column on the
 
 | Path | What it does |
 |---|---|
-| `App.vue` | The three columns: sidebar, editor, and the AI pane. It also handles ⌘N, ⌘O, ⌘S, ⌘J, and ⌘\\. |
-| `main.ts` | Mounts Vue. There is no router, so a transparent window does not leave a ghost when a page would have changed. |
-| `env.d.ts` | Types for Vite and for Vue single-file components. |
-| `components/` | The visible controls: toolbar, sidebar, folder tree, title bar, settings, the following bar, the AI pane, and the save-folder picker. |
-| `core/` | Rules kept apart from the screen: formatting, Return, filenames, pinned folders, the last five save folders, the AI session, and the provider list. |
-| `editor/` | CodeMirror 6. Live typesetting, shortcuts, and color. The document stays plain Markdown. |
-| `store/` | UI state: theme, history, autosave, sidebar folders, skin, wallpaper, and AI. The document text does not live here. |
-| `ipc/commands.ts` | The command names the interface sends to Rust. Both sides share one list. |
-| `styles/` | The four appearances, the glass, the sidebar, and type size. |
-| `test-utils/` | A small helper that measures line height in tests. It is not in the installer. |
+| `App.vue` | Splits the window into the title bar, file sidebar, editor, and AI pane. ⌘N, ⌘O, ⌘S, ⌘J, and ⌘\\ are handled here. |
+| `main.ts` | Mounts Vue. There is no router, so a transparent window does not leave a ghost frame. |
+| `env.d.ts` | Types for Vite and for Vue single-file components, so `.vue` files typecheck. |
+| `components/` | The visible controls. Each file is one piece: toolbar, sidebar, folders, outline, title bar, settings, the following bar, the AI pane, or the save-folder picker. |
+| `core/` | Rules kept off the screen: how marks wrap, where Return lands, how headings become an outline, how history rows are omitted, and how a button runs on the first press. |
+| `editor/` | CodeMirror 6. Markers hide away from the caret, headings and emphasis take their own colors, and images draw as previews. The file stays plain Markdown. |
+| `store/` | UI state: theme, history, autosave, sidebar folders, skin, wallpaper, and AI. The document text stays in the editor. |
+| `ipc/commands.ts` | Command names the interface sends to Rust. Open, save, rename, folder listing, history removal, and AI requests share one list. |
+| `styles/` | Colors for the four appearances, plus glass, the sidebar, the outline, and type size. A theme change only sets `data-theme`. |
+| `test-utils/` | Small helpers that measure line height and talk to the editor in tests. They are not in the installer. |
+
+### `src/components/`
+
+| File | What it does |
+|---|---|
+| `Toolbar.vue` | The top format bar. Headings, color, links, images, and tables open from here. A press keeps the editor selection, and the button runs once. |
+| `FollowingBar.vue` | A small format bar beside the selection. It shares write operations and the format painter with the top bar. |
+| `Sidebar.vue` | The file sidebar, split into History and Folders, with one Open button. History rows can be checked and removed together. That edits the list only. |
+| `LibraryFolders.vue` | The folder page. Pinned folders fold level by level. Removing one leaves the files on disk. |
+| `OutlineDrawer.vue` | The heading outline. Resting on 目录 slides it out; a click pins it. Pinned, it can be resized and takes the left column. |
+| `AppTitleBar.vue` | The transparent title bar. The drag layer sits behind the buttons. The filename, settings, theme, and AI switch live here. |
+| `SettingsPanel.vue` | Settings for appearance, type size, glass, and wallpaper. After a key is saved, the field clears. The page only remembers that a key exists. |
+| `FolderPicker.vue` | Asks for a folder on a new document or the first save. The last five folders are direct choices. |
+| `AiPanel.vue` | The conversation on the right. Selecting text does not send it to a model. |
+| `AiPanelShell.vue` | The frame around the AI pane: position, glass, and collapse. The conversation sits inside it. |
+| `StatusBar.vue` | The counts along the bottom. The numbers come from the editor. This bar does not read the document itself. |
+| `toolbarActions.ts` | The shared write operations for both format bars. One kind of formatting has one implementation. The painter state lives here too. |
+| `inkPreview.ts` | Keeps the color buttons in step with the selection, including when the selection length does not change. |
+| `types.ts` | Action types passed between controls. The toolbar states an intent and does not edit the document itself. |
 
 ### `src-tauri/`
 
@@ -190,7 +209,7 @@ The repository holds the source needed to build the app again. The column on the
 |---|---|
 | `src/main.rs` | The process entry. |
 | `src/lib.rs` | Registers commands and the window. On the first launch it copies history and API settings from an older Slate folder when that folder is still on the Mac. |
-| `src/files.rs` | Open, save, rename, list Markdown in a folder, and reveal a file in Finder. |
+| `src/files.rs` | Open, save, rename, list Markdown in a folder, reveal a file in Finder, and drop rows from history. It does not delete the user's files. |
 | `src/ai.rs` | Sends a conversation to the endpoint the user configured. The key is read from the Keychain. The page cannot read it. |
 | `src/glass/` | Picks liquid glass, the HUD material, or a fully opaque surface from the system version. |
 | `tauri.conf.json` | Window size, the transparent title bar, macOS 13 as the minimum, and the `.app` and `.dmg` bundles. |
@@ -203,10 +222,10 @@ The repository holds the source needed to build the app again. The column on the
 
 | Path | What it does |
 |---|---|
-| `unit/` | Formatting, Return, the folder tree, and render checks. No window. |
-| `e2e/` | Playwright checks for layout shift and for dropped input-method characters. |
-| `fixtures/` | Sample Markdown used by those checks. |
-| `README.md` | How to run the checks. |
+| `unit/` | Node checks for formatting, Return, the outline, image addresses, history removal, and render output. No window. |
+| `e2e/` | Playwright checks for line height when markers show or hide, for dropped input-method characters, and for scrolling a long page. |
+| `fixtures/` | Sample Markdown for those checks, including the CommonMark and GFM corpora. |
+| `README.md` | How to run the checks, and the result of each gate when it was last recorded. |
 
 ### Left out of git
 
