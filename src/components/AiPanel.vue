@@ -17,6 +17,15 @@ import {
   type GuardResult,
   type RewriteSnapshot,
 } from '@/core/aiGuard'
+import {
+  attachContext,
+  buildChatContext,
+  recallThread,
+  rememberThread,
+  replacePayload,
+  type ChatMessage,
+  type ThreadKey,
+} from '@/core/aiThread'
 import { CMD, EVENT } from '@/ipc/commands'
 import type { AiErrorCode, TokenUsage } from '@/core/interfaces'
 import { EDITOR_HANDLE, useStore } from '@/store'
@@ -35,6 +44,8 @@ interface ReplaceCard {
   raw: string
   snapshot: RewriteSnapshot
   done: boolean
+  /** 再改一句时，模型看这一版；写回仍用 snapshot 里当初的选区。 */
+  followUp: { source: string; instruction: string } | null
 }
 
 interface ContinueCard {
@@ -61,6 +72,12 @@ const snapshot = ref<RewriteSnapshot | null>(null)
 const result = ref<ResultCard | null>(null)
 const verdict = ref<GuardResult | null>(null)
 const canRevert = ref(false)
+const withOutline = ref(false)
+const withNearby = ref(false)
+const withWhole = ref(false)
+const threadNote = ref('')
+let threadBound: { path: string | null; session: string } | null = null
+let parkedUntitled: string | null = null
 
 let stopListen: (() => void) | null = null
 let requestId = ''
@@ -79,6 +96,14 @@ const replaceActions = [
 ] as const
 
 const running = computed(() => store.ai.streaming)
+const showContext = computed(
+  () => snapshot.value === null && !(result.value?.kind === 'replace' && result.value.done),
+)
+const placeholder = computed(() => {
+  if (result.value?.kind === 'replace' && result.value.done) return '在这个结果上再改一句'
+  if (snapshot.value !== null) return '给这次改写补一句要求'
+  return '没有选区时，在这里自由对话'
+})
 const selectionCount = computed(() => (snapshot.value === null ? 0 : countChars(snapshot.value.target)))
 const selectionPreview = computed(() => {
   const text = snapshot.value?.target.replace(/\s+/g, ' ').trim() ?? ''
@@ -96,9 +121,11 @@ onMounted(() => {
 
 watch(
   () => [store.docs.activePath, store.docs.sessionKey] as const,
-  () => {
+  ([path, session]) => {
     void refreshRevert()
+    syncThread(path, session)
   },
+  { immediate: true },
 )
 
 onBeforeUnmount(() => {
@@ -161,6 +188,7 @@ function run(action: string, label: string, instruction?: string): void {
     raw: '',
     snapshot: next,
     done: false,
+    followUp: null,
   }
   verdict.value = null
   mode = 'rewrite'
@@ -303,9 +331,62 @@ async function revertDoc(): Promise<void> {
   }
 }
 
+function threadStorage(): Storage | null {
+  try {
+    return window.localStorage
+  } catch {
+    return null
+  }
+}
+
+function activeThreadKey(path: string | null, session: string): ThreadKey {
+  if (path !== null && path !== '') return { kind: 'path', path }
+  return { kind: 'session', sessionKey: parkedUntitled ?? session }
+}
+
+function persistThread(): void {
+  if (threadBound === null) return
+  const note = rememberThread(activeThreadKey(threadBound.path, threadBound.session), messages.value, threadStorage())
+  threadNote.value = note ?? ''
+}
+
+function syncThread(path: string | null, session: string): void {
+  if (threadBound === null) {
+    if (path === null) parkedUntitled = session
+    messages.value = recallThread(activeThreadKey(path, session), threadStorage())
+    threadBound = { path, session }
+    return
+  }
+  if (threadBound.path === path && threadBound.session === session) return
+  if (threadBound.path === null && path !== null && threadBound.session === session) {
+    const note = rememberThread({ kind: 'path', path }, messages.value, threadStorage())
+    threadNote.value = note ?? ''
+    parkedUntitled = null
+    threadBound = { path, session }
+    return
+  }
+  if (threadBound.path === null) parkedUntitled = threadBound.session
+  persistThread()
+  messages.value =
+    path === null
+      ? recallThread({ kind: 'session', sessionKey: parkedUntitled ?? session }, threadStorage())
+      : recallThread({ kind: 'path', path }, threadStorage())
+  threadBound = { path, session }
+}
+
 async function send(): Promise<void> {
   const text = draft.value.trim()
   if (text === '' || running.value) return
+  const card = result.value
+  if (card !== null && card.kind === 'replace' && card.done) {
+    const source = verdict.value !== null && verdict.value.text !== '' ? verdict.value.text : stripModelFences(card.raw)
+    draft.value = ''
+    result.value = { ...card, raw: '', done: false, followUp: { source, instruction: text } }
+    verdict.value = null
+    mode = 'rewrite'
+    void stream()
+    return
+  }
   const selected = currentSnapshot()
   if (selected !== null) {
     draft.value = ''
@@ -352,12 +433,7 @@ async function stream(): Promise<void> {
                 context: '',
                 instruction: card.instruction,
               }
-            : {
-                action: card.action,
-                target: card.snapshot.target,
-                context: card.snapshot.context,
-                instruction: card.instruction,
-              }
+            : replacePayload(card)
           : null,
     })
   } catch (error: unknown) {
@@ -373,16 +449,26 @@ async function stream(): Promise<void> {
           ? null
           : checkCard(result.value, handle.getDoc())
     }
+    if (mode === 'chat') persistThread()
     store.ai.endStream()
     detach()
     await scrollDown()
   }
 }
 
-function wireMessages(): { role: string; content: string }[] {
-  return messages.value
+function wireMessages(): ChatMessage[] {
+  const turns = messages.value
     .filter((message) => message.content.trim() !== '')
     .map((message) => ({ role: message.role, content: message.content }))
+  const handle = editorHandleRef?.value
+  if (handle === null || handle === undefined) return turns
+  const cursor = handle.getSelection().from
+  const context = buildChatContext(handle.getDoc(), cursor, {
+    outline: withOutline.value,
+    nearby: withNearby.value,
+    whole: withWhole.value,
+  })
+  return attachContext(turns, context)
 }
 
 async function attach(id: string): Promise<void> {
@@ -556,13 +642,20 @@ function onComposerKeydown(event: KeyboardEvent): void {
       </button>
     </p>
 
+    <p v-if="threadNote" class="ai__note">{{ threadNote }}</p>
+
     <button v-if="canRevert" type="button" class="revert" @click="revertDoc">回到这次采纳之前</button>
 
     <form class="composer" @submit.prevent="send">
+      <div v-if="showContext" class="context">
+        <label><input v-model="withOutline" type="checkbox" :disabled="running" /> 大纲</label>
+        <label><input v-model="withNearby" type="checkbox" :disabled="running" /> 光标附近</label>
+        <label><input v-model="withWhole" type="checkbox" :disabled="running" /> 整篇</label>
+      </div>
       <textarea
         v-model="draft"
         rows="2"
-        :placeholder="snapshot ? '给这次改写补一句要求' : '没有选区时，在这里自由对话'"
+        :placeholder="placeholder"
         :disabled="running"
         @keydown="onComposerKeydown"
       />
@@ -805,8 +898,30 @@ function onComposerKeydown(event: KeyboardEvent): void {
   animation-delay: 0.3s;
 }
 
+.context {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  width: 100%;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.context label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.ai__note {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
 .composer {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   align-items: flex-end;
   padding: 8px;
