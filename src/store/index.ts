@@ -64,8 +64,6 @@ export interface Store {
   wallpaper: typeof wallpaper
   /** 侧栏是否折叠。不放appearance —— 它是布局状态不是外观设置 */
   sidebarCollapsed: boolean
-  /** AI 面板当前的实际展开态，与 ai.open 同源，抽出来供布局层直接用 */
-  isAiPanelOpen: boolean
 }
 
 const state = reactive({
@@ -83,7 +81,7 @@ const state = reactive({
  *
  * 外壳本身不用 reactive 包裹：那会让每个 getter 都多一层代理，
  * 而这些 getter 返回的已经是响应式对象。
- * 只把「本文件新增的两个字段」做成 reactive，其余直接透传，
+ * 只把侧栏折叠做成 reactive，其余直接透传，
  * 依赖关系保持最浅。
  */
 const storeInstance: Store = {
@@ -99,9 +97,6 @@ const storeInstance: Store = {
   },
   set sidebarCollapsed(value: boolean) {
     state.sidebarCollapsed = value
-  },
-  get isAiPanelOpen(): boolean {
-    return ai.open
   },
 }
 
