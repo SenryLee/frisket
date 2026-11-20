@@ -2,10 +2,19 @@
 /**
  * AI 面板。
  * 划选走改写：Rust 把上下文和目标拆开，写回前过长度、泄漏和位置锁。
- * 自由对话不写正文。密钥不进这个组件。
+ * 续写插在光标或选区末尾，不替换已有的字。自由对话不写正文。
  */
 import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { captureSelection, countChars, prepareReplacement, type GuardResult, type RewriteSnapshot } from '@/core/aiGuard'
+import {
+  captureContinuation,
+  captureSelection,
+  countChars,
+  prepareContinuation,
+  prepareReplacement,
+  type ContinuationSnapshot,
+  type GuardResult,
+  type RewriteSnapshot,
+} from '@/core/aiGuard'
 import { CMD, EVENT } from '@/ipc/commands'
 import type { AiErrorCode, TokenUsage } from '@/core/interfaces'
 import { EDITOR_HANDLE, useStore } from '@/store'
@@ -16,7 +25,8 @@ interface Bubble {
   content: string
 }
 
-interface RewriteCard {
+interface ReplaceCard {
+  kind: 'replace'
   action: string
   label: string
   instruction: string
@@ -24,6 +34,18 @@ interface RewriteCard {
   snapshot: RewriteSnapshot
   done: boolean
 }
+
+interface ContinueCard {
+  kind: 'continue'
+  action: string
+  label: string
+  instruction: string
+  raw: string
+  snapshot: ContinuationSnapshot
+  done: boolean
+}
+
+type ResultCard = ReplaceCard | ContinueCard
 
 const emit = defineEmits<{ openSettings: [] }>()
 const store = useStore()
@@ -34,7 +56,7 @@ const draft = ref('')
 const listEl = ref<HTMLElement | null>(null)
 const localError = ref('')
 const snapshot = ref<RewriteSnapshot | null>(null)
-const result = ref<RewriteCard | null>(null)
+const result = ref<ResultCard | null>(null)
 const verdict = ref<GuardResult | null>(null)
 
 let stopListen: (() => void) | null = null
@@ -43,10 +65,14 @@ let selectionTimer = 0
 let shiftSelect = false
 let mode: 'chat' | 'rewrite' = 'chat'
 
-const actions = [
+const replaceActions = [
   { id: 'rewrite', label: '润色' },
   { id: 'shorten', label: '精简' },
-  { id: 'continue', label: '续写' },
+  { id: 'fixGrammar', label: '纠错' },
+  { id: 'translate', label: '翻译' },
+  { id: 'expand', label: '扩写' },
+  { id: 'toList', label: '转列表' },
+  { id: 'toTable', label: '转表格' },
 ] as const
 
 const running = computed(() => store.ai.streaming)
@@ -100,7 +126,13 @@ function currentSnapshot(): RewriteSnapshot | null {
   return captureSelection(handle.getDoc(), range.from, range.to)
 }
 
-function run(action: string, label: string, instruction = ''): void {
+function takeDraft(): string {
+  const text = draft.value.trim()
+  if (text !== '') draft.value = ''
+  return text
+}
+
+function run(action: string, label: string, instruction?: string): void {
   const next = currentSnapshot()
   if (next === null) {
     localError.value = '先在正文里选中一段。'
@@ -111,9 +143,40 @@ function run(action: string, label: string, instruction = ''): void {
   store.ai.clearError()
   store.ai.show()
   result.value = {
+    kind: 'replace',
     action,
     label,
-    instruction,
+    instruction: instruction ?? takeDraft(),
+    raw: '',
+    snapshot: next,
+    done: false,
+  }
+  verdict.value = null
+  mode = 'rewrite'
+  void stream()
+}
+
+function runContinue(instruction?: string): void {
+  const handle = editorHandleRef?.value
+  if (handle === null || handle === undefined) {
+    localError.value = '先打开一篇文档。'
+    return
+  }
+  const range = handle.getSelection()
+  const at = range.from === range.to ? range.from : range.to
+  const next = captureContinuation(handle.getDoc(), at)
+  if (next === null) {
+    localError.value = '光标位置不对。'
+    return
+  }
+  localError.value = ''
+  store.ai.clearError()
+  store.ai.show()
+  result.value = {
+    kind: 'continue',
+    action: 'continue',
+    label: '续写',
+    instruction: instruction ?? takeDraft(),
     raw: '',
     snapshot: next,
     done: false,
@@ -126,6 +189,10 @@ function run(action: string, label: string, instruction = ''): void {
 function retry(): void {
   const card = result.value
   if (card === null || running.value) return
+  if (card.kind === 'continue') {
+    runContinue(card.instruction)
+    return
+  }
   run(card.action, card.label, card.instruction)
 }
 
@@ -135,14 +202,23 @@ function discard(): void {
   localError.value = ''
 }
 
+function checkCard(card: ResultCard, doc: string): GuardResult {
+  if (card.kind === 'continue') return prepareContinuation(card.snapshot, card.raw, doc)
+  return prepareReplacement(card.snapshot, card.raw, doc)
+}
+
 function accept(): void {
   const card = result.value
   const handle = editorHandleRef?.value
   if (card === null || !card.done || handle === null || handle === undefined) return
-  const checked = prepareReplacement(card.snapshot, card.raw, handle.getDoc())
+  const checked = checkCard(card, handle.getDoc())
   verdict.value = checked
   if (!checked.ok) return
-  handle.replaceRange(card.snapshot.from, card.snapshot.to, checked.text, 'ai')
+  if (card.kind === 'continue') {
+    handle.replaceRange(card.snapshot.at, card.snapshot.at, checked.text, 'ai')
+  } else {
+    handle.replaceRange(card.snapshot.from, card.snapshot.to, checked.text, 'ai')
+  }
   result.value = null
   verdict.value = null
   snapshot.value = null
@@ -191,12 +267,19 @@ async function stream(): Promise<void> {
       messages: mode === 'chat' ? wireMessages() : [],
       rewrite:
         mode === 'rewrite' && card !== null
-          ? {
-              action: card.action,
-              target: card.snapshot.target,
-              context: card.snapshot.context,
-              instruction: card.instruction,
-            }
+          ? card.kind === 'continue'
+            ? {
+                action: 'continue',
+                target: card.snapshot.prefix,
+                context: '',
+                instruction: card.instruction,
+              }
+            : {
+                action: card.action,
+                target: card.snapshot.target,
+                context: card.snapshot.context,
+                instruction: card.instruction,
+              }
           : null,
     })
   } catch (error: unknown) {
@@ -210,7 +293,7 @@ async function stream(): Promise<void> {
       verdict.value =
         failed || handle === null || handle === undefined
           ? null
-          : prepareReplacement(result.value.snapshot, result.value.raw, handle.getDoc())
+          : checkCard(result.value, handle.getDoc())
     }
     store.ai.endStream()
     detach()
@@ -330,16 +413,25 @@ function onComposerKeydown(event: KeyboardEvent): void {
         <p class="card__kicker">已选 {{ selectionCount }} 字</p>
         <p class="card__quote">{{ selectionPreview }}</p>
         <div class="pills">
-          <button v-for="action in actions" :key="action.id" type="button" :disabled="running" @click="run(action.id, action.label)">
+          <button v-for="action in replaceActions" :key="action.id" type="button" :disabled="running" @click="run(action.id, action.label)">
             {{ action.label }}
           </button>
+          <button type="button" :disabled="running" @click="runContinue()">续写</button>
+        </div>
+      </section>
+
+      <section v-else-if="result === null" class="card">
+        <p class="card__kicker">从光标接着写</p>
+        <p class="card__quote">不改动已经写好的字，新文字接在光标后面。</p>
+        <div class="pills">
+          <button type="button" :disabled="running" @click="runContinue()">续写</button>
         </div>
       </section>
 
       <section v-if="result" class="card card--live">
         <header class="card__top">
           <span>{{ result.label }}</span>
-          <span v-if="verdict?.ok" class="card__count">{{ verdict.before }} → {{ verdict.after }} 字</span>
+          <span v-if="verdict?.ok && result.kind === 'replace'" class="card__count">{{ verdict.before }} → {{ verdict.after }} 字</span>
           <span v-else-if="running" class="card__count">正在写</span>
         </header>
         <p v-if="result.raw !== ''" class="card__body">{{ result.raw }}</p>
@@ -357,7 +449,7 @@ function onComposerKeydown(event: KeyboardEvent): void {
 
       <div v-if="messages.length === 0 && snapshot === null && result === null" class="ai__empty">
         <p class="ai__empty-title">划选一段，再让它改这一段</p>
-        <p class="ai__empty-hint">润色、精简、续写都只替换选中的文字。没有选区时，下面是自由对话，不会写入正文。</p>
+        <p class="ai__empty-hint">润色、精简、纠错、翻译、扩写、转列表、转表格都只替换选中的文字。续写接在光标或选区后面。没有选区时，下面是自由对话，不会写入正文。</p>
       </div>
 
       <article v-for="(message, index) in messages" :key="index" class="bubble" :class="`is-${message.role}`">

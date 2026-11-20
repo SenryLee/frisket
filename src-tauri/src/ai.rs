@@ -327,6 +327,8 @@ const CHAT_SYSTEM: &str = "你是本地 Markdown 编辑器里的写作助手。�
 
 const REWRITE_SYSTEM: &str = "你只能输出 <target> 标签内文本的替换版本。\n1. 绝不输出 <target> 之外的任何内容\n2. 绝不添加解释、前言、结语、代码块围栏\n3. 保持原有 Markdown 语法结构不被破坏\n4. <context> 仅供理解上下文，绝对不可修改或复述";
 
+const CONTINUE_SYSTEM: &str = "只输出要补上的文字。不重复光标前的原文，不解释，不加围栏。";
+
 fn openai_payload(model: &str, turns: &[ChatTurn], rewrite: bool) -> serde_json::Value {
     json!({
         "messages": message_body(turns, rewrite),
@@ -384,6 +386,23 @@ fn prepare_turns(
     let Some(request) = rewrite else {
         return Ok((sanitize_messages(messages)?, false));
     };
+    if request.action.trim() == "continue" {
+        let prefix = clip_chars(request.target.trim(), 400);
+        let instruction = clip_chars(request.instruction.trim(), 500);
+        return Ok((
+            vec![
+                ChatTurn {
+                    role: "system".to_string(),
+                    content: CONTINUE_SYSTEM.to_string(),
+                },
+                ChatTurn {
+                    role: "user".to_string(),
+                    content: continue_user(&prefix, &instruction),
+                },
+            ],
+            true,
+        ));
+    }
     let target = request.target.trim();
     if target.is_empty() {
         return Err("unknown|没有要改写的内容".to_string());
@@ -408,20 +427,38 @@ fn prepare_turns(
     ))
 }
 
+fn action_directive(action: &str) -> &'static str {
+    match action {
+        "shorten" => "动作：精简",
+        "custom" => "动作：按补充要求改写",
+        "expand" => "沿着选区原意写长，保留里面的事实和专名。不另起一篇，不把选区外的内容写进来。",
+        "fixGrammar" => "只改错字、病句和明显的标点。没有问题的句子原样返回。不润色语气，不增删内容。",
+        "translate" => "纯中文译成英文，纯英文译成中文。中英夹杂时整段译成中文。补充要求优先。",
+        "toList" => "并列项用无序列表；原文自带序号时用有序列表。不写「以下是列表」这类前言。",
+        "toTable" => "写成 GitHub 表格，第一行是表头，并带分隔行。列数按原文的并列关系来。不写表格以外的说明。",
+        _ => "动作：润色",
+    }
+}
+
 fn rewrite_user(action: &str, target: &str, context: &str, instruction: &str) -> String {
-    let verb = match action {
-        "shorten" => "精简",
-        "continue" => "续写",
-        "expand" => "扩写",
-        "custom" => "按补充要求改写",
-        _ => "润色",
-    };
     let extra = if instruction.is_empty() {
         String::new()
     } else {
         format!("\n补充要求：{instruction}")
     };
-    format!("动作：{verb}{extra}\n<context>\n{context}\n</context>\n<target>\n{target}\n</target>")
+    format!(
+        "{}{extra}\n<context>\n{context}\n</context>\n<target>\n{target}\n</target>",
+        action_directive(action)
+    )
+}
+
+fn continue_user(prefix: &str, instruction: &str) -> String {
+    let extra = if instruction.is_empty() {
+        String::new()
+    } else {
+        format!("\n补充要求：{instruction}")
+    };
+    format!("动作：续写{extra}\n<before>\n{prefix}\n</before>")
 }
 
 fn clip_chars(text: &str, max: usize) -> String {
@@ -877,8 +914,9 @@ fn delete_key(app: &AppHandle) -> Result<(), String> {
 mod tests {
     use super::{
         anthropic_payload, completions_url, drain_sse, finished_usage, messages_url, normalize_base,
-        normalize_model, normalize_protocol, openai_payload, rewrite_user, stream_signal, ChatTurn,
-        Signal, UsageAcc, CHAT_SYSTEM, MAX_TOKENS, REWRITE_SYSTEM, TEMPERATURE,
+        normalize_model, normalize_protocol, openai_payload, prepare_turns, rewrite_user, stream_signal,
+        ChatTurn, RewriteRequest, Signal, UsageAcc, CHAT_SYSTEM, CONTINUE_SYSTEM, MAX_TOKENS,
+        REWRITE_SYSTEM, TEMPERATURE,
     };
     use serde_json::json;
 
@@ -932,6 +970,75 @@ mod tests {
         assert_eq!(messages_url("https://api.anthropic.com/v1"), "https://api.anthropic.com/v1/messages");
         assert!(normalize_protocol("anthropic".to_string()).is_ok());
         assert!(normalize_protocol("other".to_string()).is_err());
+    }
+
+    fn request(action: &str, target: &str, context: &str, instruction: &str) -> RewriteRequest {
+        RewriteRequest {
+            action: action.to_string(),
+            target: target.to_string(),
+            context: context.to_string(),
+            instruction: instruction.to_string(),
+        }
+    }
+
+    #[test]
+    fn each_replace_action_keeps_its_own_instruction() {
+        let fix = rewrite_user("fixGrammar", "目标", "上下文", "");
+        assert!(fix.contains("只改错字、病句和明显的标点"));
+        assert!(fix.contains("没有问题的句子原样返回"));
+        assert!(fix.contains("不润色语气，不增删内容"));
+        assert!(!fix.contains("动作：润色"));
+
+        let translate = rewrite_user("translate", "目标", "上下文", "译成日语");
+        assert!(translate.contains("纯中文译成英文，纯英文译成中文"));
+        assert!(translate.contains("中英夹杂时整段译成中文"));
+        assert!(translate.contains("补充要求优先"));
+        assert!(translate.contains("补充要求：译成日语"));
+
+        let expand = rewrite_user("expand", "专名甲", "上下文", "");
+        assert!(expand.contains("沿着选区原意写长，保留里面的事实和专名"));
+        assert!(expand.contains("不另起一篇，不把选区外的内容写进来"));
+
+        let list = rewrite_user("toList", "目标", "上下文", "");
+        assert!(list.contains("并列项用无序列表；原文自带序号时用有序列表"));
+        assert!(list.contains("不写「以下是列表」这类前言"));
+
+        let table = rewrite_user("toTable", "目标", "上下文", "");
+        assert!(table.contains("写成 GitHub 表格，第一行是表头，并带分隔行"));
+        assert!(table.contains("不写表格以外的说明"));
+
+        assert!(rewrite_user("rewrite", "目标", "上下文", "").contains("动作：润色"));
+        assert!(rewrite_user("summarize", "目标", "上下文", "").contains("动作：润色"));
+        let shorten = rewrite_user("shorten", "目标", "上下文", "再短一点");
+        assert!(shorten.contains("动作：精简"));
+        assert!(shorten.contains("补充要求：再短一点"));
+
+        let (turns, _) = prepare_turns(vec![], Some(request("fixGrammar", "目标", "上下文", ""))).unwrap();
+        assert_eq!(turns[0].content, REWRITE_SYSTEM);
+        assert!(turns[0].content.contains("替换版本"));
+    }
+
+    #[test]
+    fn continue_prompt_is_not_a_replacement_and_omits_the_following_text() {
+        let (turns, rewrite) = prepare_turns(
+            vec![],
+            Some(request("continue", &"啊".repeat(500), "后文不该出现", "用短句")),
+        )
+        .unwrap();
+        assert!(rewrite);
+        assert_eq!(turns[0].content, CONTINUE_SYSTEM);
+        assert!(CONTINUE_SYSTEM.contains("只输出要补上的文字"));
+        assert!(CONTINUE_SYSTEM.contains("不重复光标前的原文"));
+        assert!(CONTINUE_SYSTEM.contains("不解释"));
+        assert!(CONTINUE_SYSTEM.contains("不加围栏"));
+        assert!(!turns[0].content.contains("替换版本"));
+        let user = &turns[1].content;
+        assert!(user.contains("补充要求：用短句"));
+        assert!(user.contains("<before>\n"));
+        assert!(!user.contains("<context>"));
+        assert!(!user.contains("<target>"));
+        assert!(!user.contains("后文不该出现"));
+        assert_eq!(user.matches('啊').count(), 400);
     }
 
     #[test]
