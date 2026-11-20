@@ -1,9 +1,9 @@
 //! AI 对话。请求走本进程，密钥不进前端包。
 //!
-//! 流式调用按 xAI 文档的 chat completions 示例：
-//! POST {base}/chat/completions
-//! { "model": "grok-4.7", "stream": true, "messages": [...] }
-//! 增量在 choices[0].delta.content。
+//! OpenAI 兼容走 chat completions，Anthropic 走 messages。
+//! 温度和 max_tokens 写死，对话和改写共用。
+//! 增量在 choices[0].delta.content，或 Anthropic 的 content_block_delta。
+//! 用量从流里的 usage 取出，随 ai:done 发出。
 
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
@@ -18,6 +18,9 @@ use tokio::sync::watch;
 
 const DEFAULT_BASE: &str = "https://api.x.ai/v1";
 const DEFAULT_MODEL: &str = "grok-4.7";
+/// 对话和改写共用。不进设置页。
+const TEMPERATURE: f64 = 0.3;
+const MAX_TOKENS: u64 = 4096;
 const KEYCHAIN_SERVICE: &str = "com.frisket.md";
 const LEGACY_KEYCHAIN_SERVICE: &str = "com.slate.md";
 const KEYCHAIN_USER: &str = "api-key";
@@ -77,8 +80,24 @@ struct DeltaEvent {
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+struct UsagePayload {
+    prompt_tokens: u64,
+    completion_tokens: u64,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 struct DoneEvent {
     request_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    usage: Option<UsagePayload>,
+}
+
+fn done_event(request_id: &str, usage: Option<UsagePayload>) -> DoneEvent {
+    DoneEvent {
+        request_id: request_id.to_string(),
+        usage,
+    }
 }
 
 fn cancels() -> &'static Mutex<HashMap<String, watch::Sender<bool>>> {
@@ -185,29 +204,18 @@ async fn stream_chat(
     cancel: &mut watch::Receiver<bool>,
 ) -> Result<(), String> {
     let pending = if settings.protocol == "anthropic" {
-        let (system, messages) = split_anthropic(turns, rewrite);
         http()
             .post(messages_url(&settings.base_url))
             .header("x-api-key", key)
             .header("anthropic-version", "2023-06-01")
             .header("Content-Type", "application/json")
-            .json(&json!({
-                "model": settings.model,
-                "max_tokens": 4096,
-                "stream": true,
-                "system": system,
-                "messages": messages
-            }))
+            .json(&anthropic_payload(&settings.model, turns, rewrite))
             .send()
     } else {
         let mut request = http()
             .post(completions_url(&settings.base_url))
             .header("Content-Type", "application/json")
-            .json(&json!({
-                "messages": message_body(turns, rewrite),
-                "model": settings.model,
-                "stream": true
-            }));
+            .json(&openai_payload(&settings.model, turns, rewrite));
         if !key.is_empty() {
             request = request.bearer_auth(key);
         }
@@ -216,7 +224,7 @@ async fn stream_chat(
 
     let response = tokio::select! {
         _ = cancel.changed() => {
-            let _ = app.emit("ai:done", DoneEvent { request_id: request_id.to_string() });
+            let _ = app.emit("ai:done", done_event(request_id, None));
             return Ok(());
         }
         response = tokio::time::timeout(Duration::from_secs(30), pending) => {
@@ -237,12 +245,13 @@ async fn stream_chat(
     let mut stream = response.bytes_stream();
     let mut buffer = String::new();
     let mut saw_event = false;
+    let mut usage = UsageAcc::default();
 
     loop {
         tokio::select! {
             changed = cancel.changed() => {
                 if changed.is_ok() && *cancel.borrow() {
-                    let _ = app.emit("ai:done", DoneEvent { request_id: request_id.to_string() });
+                    let _ = app.emit("ai:done", done_event(request_id, None));
                     return Ok(());
                 }
             }
@@ -254,7 +263,7 @@ async fn stream_chat(
                 let Some(chunk) = chunk else { break };
                 let bytes = chunk.map_err(|_| "network|读取回复时连接中断".to_string())?;
                 buffer.push_str(&String::from_utf8_lossy(&bytes));
-                let (done, pieces) = drain_sse(&mut buffer).map_err(|message| {
+                let (done, pieces) = drain_sse(&mut buffer, &mut usage).map_err(|message| {
                     format!("unknown|{message}")
                 })?;
                 for text in pieces {
@@ -268,7 +277,10 @@ async fn stream_chat(
                     );
                 }
                 if done {
-                    let _ = app.emit("ai:done", DoneEvent { request_id: request_id.to_string() });
+                    let _ = app.emit(
+                        "ai:done",
+                        done_event(request_id, finished_usage(&usage)),
+                    );
                     return Ok(());
                 }
             }
@@ -281,7 +293,8 @@ async fn stream_chat(
     }
     if !leftover.is_empty() {
         buffer.push('\n');
-        let (done, pieces) = drain_sse(&mut buffer).map_err(|message| format!("unknown|{message}"))?;
+        let (done, pieces) = drain_sse(&mut buffer, &mut usage)
+            .map_err(|message| format!("unknown|{message}"))?;
         for text in pieces {
             saw_event = true;
             let _ = app.emit(
@@ -306,13 +319,36 @@ async fn stream_chat(
             return Err("unknown|没有收到可读的回复".to_string());
         }
     }
-    let _ = app.emit("ai:done", DoneEvent { request_id: request_id.to_string() });
+    let _ = app.emit("ai:done", done_event(request_id, finished_usage(&usage)));
     Ok(())
 }
 
-const CHAT_SYSTEM: &str = "You are Grok, a helpful and useful AI built by xAI. You are helping inside a local Markdown editor. Reply in the user's language. Be concise, and do not repeat the whole document.";
+const CHAT_SYSTEM: &str = "你是本地 Markdown 编辑器里的写作助手。用用户正在使用的语言回答。尽量短，不要复述整篇文档。";
 
 const REWRITE_SYSTEM: &str = "你只能输出 <target> 标签内文本的替换版本。\n1. 绝不输出 <target> 之外的任何内容\n2. 绝不添加解释、前言、结语、代码块围栏\n3. 保持原有 Markdown 语法结构不被破坏\n4. <context> 仅供理解上下文，绝对不可修改或复述";
+
+fn openai_payload(model: &str, turns: &[ChatTurn], rewrite: bool) -> serde_json::Value {
+    json!({
+        "messages": message_body(turns, rewrite),
+        "model": model,
+        "stream": true,
+        "temperature": TEMPERATURE,
+        "max_tokens": MAX_TOKENS,
+        "stream_options": { "include_usage": true }
+    })
+}
+
+fn anthropic_payload(model: &str, turns: &[ChatTurn], rewrite: bool) -> serde_json::Value {
+    let (system, messages) = split_anthropic(turns, rewrite);
+    json!({
+        "model": model,
+        "max_tokens": MAX_TOKENS,
+        "temperature": TEMPERATURE,
+        "stream": true,
+        "system": system,
+        "messages": messages
+    })
+}
 
 fn message_body(turns: &[ChatTurn], rewrite: bool) -> Vec<serde_json::Value> {
     let mut messages = Vec::new();
@@ -452,8 +488,9 @@ fn error_message(body: &str) -> String {
     }
 }
 
-/// 从 SSE 缓冲里取出完整行。返回是否遇到 [DONE]，以及正文增量。
-fn drain_sse(buffer: &mut String) -> Result<(bool, Vec<String>), String> {
+/// 从 SSE 缓冲里取出完整行。返回是否遇到结束，以及正文增量。
+/// 用量单独记下：没有正文的 usage 包不能当成可忽略的空增量丢掉。
+fn drain_sse(buffer: &mut String, usage: &mut UsageAcc) -> Result<(bool, Vec<String>), String> {
     let mut pieces = Vec::new();
     let mut done = false;
     while let Some(index) = buffer.find('\n') {
@@ -466,6 +503,7 @@ fn drain_sse(buffer: &mut String) -> Result<(bool, Vec<String>), String> {
         if data.is_empty() {
             continue;
         }
+        note_usage(usage, data);
         match stream_signal(data)? {
             Signal::Done => {
                 done = true;
@@ -476,6 +514,57 @@ fn drain_sse(buffer: &mut String) -> Result<(bool, Vec<String>), String> {
         }
     }
     Ok((done, pieces))
+}
+
+#[derive(Debug, Default)]
+struct UsageAcc {
+    prompt: Option<u64>,
+    completion: Option<u64>,
+}
+
+/// 认 OpenAI 的 prompt_tokens / completion_tokens，以及 Anthropic 的 input_tokens / output_tokens。
+/// 对不上就留下空位，不让这一行把整次请求打成失败。
+fn note_usage(acc: &mut UsageAcc, data: &str) {
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(data) else {
+        return;
+    };
+    if let Some(usage) = value.get("usage").filter(|item| !item.is_null()) {
+        read_usage_object(acc, usage);
+    }
+    if value.get("type").and_then(|item| item.as_str()) == Some("message_start") {
+        if let Some(usage) = value.pointer("/message/usage").filter(|item| !item.is_null()) {
+            read_usage_object(acc, usage);
+        }
+    }
+}
+
+fn read_usage_object(acc: &mut UsageAcc, usage: &serde_json::Value) {
+    if let Some(count) = first_u64(usage, &["prompt_tokens", "input_tokens"]) {
+        acc.prompt = Some(count);
+    }
+    if let Some(count) = first_u64(usage, &["completion_tokens", "output_tokens"]) {
+        acc.completion = Some(count);
+    }
+}
+
+fn first_u64(value: &serde_json::Value, keys: &[&str]) -> Option<u64> {
+    keys.iter().find_map(|key| value.get(*key).and_then(json_u64))
+}
+
+fn json_u64(value: &serde_json::Value) -> Option<u64> {
+    value
+        .as_u64()
+        .or_else(|| value.as_i64().and_then(|count| u64::try_from(count).ok()))
+}
+
+fn finished_usage(acc: &UsageAcc) -> Option<UsagePayload> {
+    match (acc.prompt, acc.completion) {
+        (Some(prompt_tokens), Some(completion_tokens)) => Some(UsagePayload {
+            prompt_tokens,
+            completion_tokens,
+        }),
+        _ => None,
+    }
 }
 
 #[derive(Debug)]
@@ -787,9 +876,11 @@ fn delete_key(app: &AppHandle) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        completions_url, drain_sse, messages_url, normalize_base, normalize_model, normalize_protocol,
-        rewrite_user, stream_signal, Signal,
+        anthropic_payload, completions_url, drain_sse, finished_usage, messages_url, normalize_base,
+        normalize_model, normalize_protocol, openai_payload, rewrite_user, stream_signal, ChatTurn,
+        Signal, UsageAcc, CHAT_SYSTEM, MAX_TOKENS, REWRITE_SYSTEM, TEMPERATURE,
     };
+    use serde_json::json;
 
     #[test]
     fn completions_url_appends_once() {
@@ -846,9 +937,105 @@ mod tests {
     #[test]
     fn drain_stops_on_done() {
         let mut buffer = "data: {\"choices\":[{\"delta\":{\"content\":\"Hi\"}}]}\n\ndata: [DONE]\n".to_string();
-        let (done, pieces) = drain_sse(&mut buffer).unwrap();
+        let mut usage = UsageAcc::default();
+        let (done, pieces) = drain_sse(&mut buffer, &mut usage).unwrap();
         assert!(done);
         assert_eq!(pieces, vec!["Hi".to_string()]);
+        assert!(finished_usage(&usage).is_none());
+    }
+
+    #[test]
+    fn sampling_limits_go_out_on_both_protocols() {
+        let chat = vec![ChatTurn {
+            role: "user".to_string(),
+            content: "你好".to_string(),
+        }];
+        let rewrite = vec![
+            ChatTurn {
+                role: "system".to_string(),
+                content: REWRITE_SYSTEM.to_string(),
+            },
+            ChatTurn {
+                role: "user".to_string(),
+                content: "改".to_string(),
+            },
+        ];
+        for body in [
+            openai_payload("grok-4.7", &chat, false),
+            openai_payload("grok-4.7", &rewrite, true),
+            anthropic_payload("claude-sonnet-4-5", &chat, false),
+            anthropic_payload("claude-sonnet-4-5", &rewrite, true),
+        ] {
+            assert_eq!(body["temperature"], json!(TEMPERATURE));
+            assert_eq!(body["temperature"].as_f64(), Some(0.3));
+            assert_eq!(body["max_tokens"], json!(MAX_TOKENS));
+            assert_eq!(body["max_tokens"], json!(4096));
+        }
+        assert_eq!(
+            openai_payload("m", &chat, false)["stream_options"]["include_usage"],
+            json!(true)
+        );
+        assert!(!CHAT_SYSTEM.contains("Grok"));
+        assert!(!CHAT_SYSTEM.contains("xAI"));
+        assert_eq!(
+            openai_payload("m", &chat, false)["messages"][0]["content"].as_str(),
+            Some(CHAT_SYSTEM)
+        );
+        assert_eq!(
+            anthropic_payload("m", &chat, false)["system"].as_str(),
+            Some(CHAT_SYSTEM)
+        );
+        assert!(anthropic_payload("m", &rewrite, true)["system"]
+            .as_str()
+            .unwrap()
+            .contains("你只能输出"));
+    }
+
+    #[test]
+    fn usage_line_is_kept_when_the_chunk_has_no_text() {
+        let mut buffer = concat!(
+            "data: {\"choices\":[{\"delta\":{\"content\":\"Hi\"}}]}\n",
+            "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":11,\"completion_tokens\":2,\"total_tokens\":13}}\n",
+            "data: [DONE]\n",
+        )
+        .to_string();
+        let mut usage = UsageAcc::default();
+        let (done, pieces) = drain_sse(&mut buffer, &mut usage).unwrap();
+        assert!(done);
+        assert_eq!(pieces, vec!["Hi".to_string()]);
+        let finished = finished_usage(&usage).expect("usage");
+        assert_eq!(finished.prompt_tokens, 11);
+        assert_eq!(finished.completion_tokens, 2);
+    }
+
+    #[test]
+    fn anthropic_usage_comes_from_start_and_delta() {
+        let mut buffer = concat!(
+            "data: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":20,\"output_tokens\":1}}}\n",
+            "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"好\"}}\n",
+            "data: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":4}}\n",
+            "data: {\"type\":\"message_stop\"}\n",
+        )
+        .to_string();
+        let mut usage = UsageAcc::default();
+        let (done, pieces) = drain_sse(&mut buffer, &mut usage).unwrap();
+        assert!(done);
+        assert_eq!(pieces, vec!["好".to_string()]);
+        let finished = finished_usage(&usage).expect("usage");
+        assert_eq!(finished.prompt_tokens, 20);
+        assert_eq!(finished.completion_tokens, 4);
+    }
+
+    #[test]
+    fn unknown_usage_fields_leave_the_request_successful() {
+        let mut buffer =
+            "data: {\"choices\":[{\"delta\":{\"content\":\"A\"}}],\"usage\":{\"total_tokens\":9}}\n"
+                .to_string();
+        let mut usage = UsageAcc::default();
+        let (done, pieces) = drain_sse(&mut buffer, &mut usage).unwrap();
+        assert!(!done);
+        assert_eq!(pieces, vec!["A".to_string()]);
+        assert!(finished_usage(&usage).is_none());
     }
 
     #[test]

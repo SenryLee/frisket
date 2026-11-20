@@ -206,28 +206,6 @@ export interface AppearancePrefs {
 // AI
 // ─────────────────────────────────────────────────────────────
 
-/**
- * 请求体内部表示。
- *
- * 关键设计：Context 与 Target 是两个不同的变体，而非两个不同字符串。
- * 模板必然分栏渲染，物理上无法把「允许改写的部分」和「参考的部分」
- * 混进同一个 prompt 段。这是需求「AI 有且仅对划选部分处理」的结构性保障，
- * 比任何 prompt 工程技巧都可靠。
- */
-export type AiPart =
-  | { kind: 'text'; text: string }
-  /** 只读上下文。prompt 中包 <context>，模型绝对不可修改。 */
-  | { kind: 'context'; text: string }
-  /** 唯一允许改写的部分。prompt 中包 <target>。 */
-  | { kind: 'target'; from: number; to: number; text: string }
-
-export type AiRole = 'system' | 'user' | 'assistant'
-
-export interface AiMessage {
-  role: AiRole
-  parts: AiPart[]
-}
-
 /** AI 面板可触发的动作 */
 export type AiAction =
   | 'rewrite'      // 润色
@@ -240,13 +218,6 @@ export type AiAction =
   | 'toList'       // 转列表
   | 'fixGrammar'   // 纠错
   | 'custom'       // 自定义指令
-
-/** 流式事件。Rust 侧通过 Channel 逐个下发。 */
-export type AiStreamEvent =
-  | { type: 'delta'; text: string }
-  | { type: 'done'; text: string; usage?: TokenUsage }
-  | { type: 'error'; message: string; code?: AiErrorCode }
-  | { type: 'cancelled' }
 
 export type AiErrorCode =
   | 'no_key'          // 未配置 key
@@ -261,36 +232,6 @@ export type AiErrorCode =
 export interface TokenUsage {
   promptTokens: number
   completionTokens: number
-}
-
-export type ProviderProtocol = 'openai' | 'anthropic'
-
-export interface ProviderConfig {
-  id: string
-  name: string
-  protocol: ProviderProtocol
-  baseUrl: string
-  /** 默认模型，用户可覆盖（豆包的模型名是 endpoint id） */
-  defaultModel: string
-  /** 是否需要在 UI 上手填模型名 */
-  customModel: boolean
-  /** 走本地网络，界面上标注「无云端成本」 */
-  local: boolean
-}
-
-export interface AiPrefs {
-  /** 当前选中的 provider id */
-  provider: string
-  model: string
-  /** 温度，0-2 */
-  temperature: number
-  maxTokens: number
-  /** 上下文取景范围：划选前后各取多少字符 */
-  contextRadius: number
-  /** 划选后自动送入面板的延迟，0 表示立即 */
-  selectionDebounce: number
-  /** 成本计量开关 */
-  costMeter: boolean
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -327,7 +268,6 @@ export interface DiffHunk {
 export interface Settings {
   appearance: AppearancePrefs
   editor: EditorPrefs
-  ai: AiPrefs
 }
 
 export interface AppInfo {
