@@ -21,6 +21,7 @@ import type { Extension } from '@codemirror/state'
 import { Prec } from '@codemirror/state'
 import { insertTab, indentMore, indentLess } from '@codemirror/commands'
 import { newlineOutsideMarker } from '@/core/newline'
+import { acceptGhostContinue, dismissGhostContinue, requestGhostContinue } from '@/editor/ghostContinue'
 
 /** 空列表记号的形态：只含缩进与一个列表记号。 */
 const EMPTY_LIST_ITEM = /^(\s*)([-*+]|\d+[.)])\s$/
@@ -89,17 +90,20 @@ const selectLine: Command = (view: EditorView) => {
  * @codemirror/commands 与 @codemirror/search 的默认 keymap 提供，
  * 不在这里重复定义，避免同一动作有两个来源。
  */
-const baseKeymap: Extension = Prec.highest(
-  keymap.of([
-    { key: 'Enter', run: exitEmptyListItem },
-    { key: 'Enter', run: exitInlineMarker },
-    { key: 'Mod-Enter', run: exitEmptyListItem },
-    { key: 'Tab', run: indentForward },
-    { key: 'Shift-Tab', run: indentLess },
-    { key: 'Alt-ArrowUp', run: selectLine },
-    { key: 'Alt-ArrowDown', run: selectLine },
-  ]),
-)
+export const editorKeyBindings = [
+  { key: 'Enter', run: exitEmptyListItem },
+  { key: 'Enter', run: exitInlineMarker },
+  { key: 'Mod-Enter', run: exitEmptyListItem },
+  { key: 'Alt-Mod-j', run: requestGhostContinue },
+  { key: 'Escape', run: dismissGhostContinue },
+  { key: 'Tab', run: acceptGhostContinue },
+  { key: 'Tab', run: indentForward },
+  { key: 'Shift-Tab', run: indentLess },
+  { key: 'Alt-ArrowUp', run: selectLine },
+  { key: 'Alt-ArrowDown', run: selectLine },
+]
+
+const baseKeymap: Extension = Prec.highest(keymap.of(editorKeyBindings))
 
 /**
  * 需要语言包能力的键位。

@@ -13,6 +13,7 @@ import type { ToolbarAction } from './types'
 
 const emit = defineEmits<{
   action: [action: ToolbarAction]
+  writing: [action: 'rewrite' | 'fixGrammar']
 }>()
 
 const store = useStore()
@@ -49,7 +50,7 @@ function place(): void {
     visible.value = false
     return
   }
-  const width = bar.value?.offsetWidth ?? 280
+  const width = bar.value?.offsetWidth ?? 360
   const nextTop = rect.top - 40
   top.value = nextTop < 48 ? rect.bottom + 8 : nextTop
   left.value = Math.max(8, Math.min(rect.left, window.innerWidth - width - 8))
@@ -167,6 +168,12 @@ onBeforeUnmount(() => {
       @click="fire(button.action)"
     >
       {{ button.glyph }}
+    </button>
+    <button type="button" class="following__button" title="润色" aria-label="润色" @click="emit('writing', 'rewrite')">
+      润色
+    </button>
+    <button type="button" class="following__button" title="纠错" aria-label="纠错" @click="emit('writing', 'fixGrammar')">
+      纠错
     </button>
   </div>
   <Teleport to="body">
