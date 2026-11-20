@@ -5,12 +5,14 @@
  * 续写插在光标或选区末尾，不替换已有的字。自由对话不写正文。
  */
 import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { diffText, type TextDiff } from '@/core/aiDiff'
 import {
   captureContinuation,
   captureSelection,
   countChars,
   prepareContinuation,
   prepareReplacement,
+  stripModelFences,
   type ContinuationSnapshot,
   type GuardResult,
   type RewriteSnapshot,
@@ -58,6 +60,7 @@ const localError = ref('')
 const snapshot = ref<RewriteSnapshot | null>(null)
 const result = ref<ResultCard | null>(null)
 const verdict = ref<GuardResult | null>(null)
+const canRevert = ref(false)
 
 let stopListen: (() => void) | null = null
 let requestId = ''
@@ -88,7 +91,15 @@ function onKeyDown(event: KeyboardEvent): void {
 
 onMounted(() => {
   window.addEventListener('keydown', onKeyDown)
+  void refreshRevert()
 })
+
+watch(
+  () => [store.docs.activePath, store.docs.sessionKey] as const,
+  () => {
+    void refreshRevert()
+  },
+)
 
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKeyDown)
@@ -204,25 +215,92 @@ function discard(): void {
 
 function checkCard(card: ResultCard, doc: string): GuardResult {
   if (card.kind === 'continue') return prepareContinuation(card.snapshot, card.raw, doc)
-  return prepareReplacement(card.snapshot, card.raw, doc)
+  return prepareReplacement(card.snapshot, card.raw, doc, card.action)
 }
 
-function accept(): void {
+const diffView = computed((): TextDiff | null => {
+  const card = result.value
+  if (card === null || !card.done) return null
+  const proposed = verdict.value !== null && verdict.value.text !== '' ? verdict.value.text : stripModelFences(card.raw)
+  const previous = card.kind === 'replace' ? card.snapshot.target : ''
+  return diffText(previous, proposed)
+})
+
+function documentKey(): { path: string; documentId: string } {
+  const path = store.docs.activePath ?? ''
+  return { path, documentId: path !== '' ? path : store.docs.sessionKey }
+}
+
+async function refreshRevert(): Promise<void> {
+  if (!isTauriRuntime()) {
+    canRevert.value = false
+    return
+  }
+  try {
+    const { invoke } = await import('@tauri-apps/api/core')
+    const key = documentKey()
+    const list = await invoke<{ id: string }[]>(CMD.docSnapshotList, key)
+    canRevert.value = list.length > 0
+  } catch {
+    canRevert.value = false
+  }
+}
+
+async function rememberSnapshot(text: string, action: string, wordDelta: number): Promise<boolean> {
+  if (!isTauriRuntime()) return true
+  try {
+    const { invoke } = await import('@tauri-apps/api/core')
+    const key = documentKey()
+    await invoke(CMD.docSnapshot, {
+      ...key,
+      text,
+      reason: 'ai-write',
+      aiAction: action,
+      wordDelta,
+    })
+    return true
+  } catch (error: unknown) {
+    localError.value = error instanceof Error ? error.message : '没能留下回退用的正文'
+    return false
+  }
+}
+
+async function accept(force = false): Promise<void> {
   const card = result.value
   const handle = editorHandleRef?.value
   if (card === null || !card.done || handle === null || handle === undefined) return
-  const checked = checkCard(card, handle.getDoc())
+  const checked = verdict.value ?? checkCard(card, handle.getDoc())
   verdict.value = checked
-  if (!checked.ok) return
+  if (!checked.ok && !(force && checked.force)) return
+  const doc = handle.getDoc()
+  const saved = await rememberSnapshot(doc, card.action, checked.after - checked.before)
+  if (!saved) return
   if (card.kind === 'continue') {
     handle.replaceRange(card.snapshot.at, card.snapshot.at, checked.text, 'ai')
   } else {
     handle.replaceRange(card.snapshot.from, card.snapshot.to, checked.text, 'ai')
   }
+  canRevert.value = isTauriRuntime()
   result.value = null
   verdict.value = null
   snapshot.value = null
   handle.focus()
+}
+
+async function revertDoc(): Promise<void> {
+  const handle = editorHandleRef?.value
+  if (handle === null || handle === undefined || !isTauriRuntime()) return
+  try {
+    const { invoke } = await import('@tauri-apps/api/core')
+    const restored = await invoke<{ text: string }>(CMD.docRevert, {
+      ...documentKey(),
+      text: handle.getDoc(),
+    })
+    handle.replaceRange(0, handle.getDoc().length, restored.text, 'user')
+    handle.focus()
+  } catch (error: unknown) {
+    localError.value = error instanceof Error ? error.message : '没能回到采纳之前'
+  }
 }
 
 async function send(): Promise<void> {
@@ -431,17 +509,27 @@ function onComposerKeydown(event: KeyboardEvent): void {
       <section v-if="result" class="card card--live">
         <header class="card__top">
           <span>{{ result.label }}</span>
-          <span v-if="verdict?.ok && result.kind === 'replace'" class="card__count">{{ verdict.before }} → {{ verdict.after }} 字</span>
-          <span v-else-if="running" class="card__count">正在写</span>
+          <span v-if="running" class="card__count">正在写</span>
+          <span v-else-if="verdict" class="card__count">{{ verdict.before }} → {{ verdict.after }} 字</span>
         </header>
-        <p v-if="result.raw !== ''" class="card__body">{{ result.raw }}</p>
+        <div v-if="diffView && diffView.mode === 'lines'" class="diff">
+          <p v-for="(line, index) in diffView.lines" :key="index" class="diff__line" :class="`is-${line.kind}`">
+            <span class="diff__mark">{{ line.kind === 'add' ? '+' : line.kind === 'remove' ? '−' : ' ' }}</span>
+            <span>{{ line.text === '' ? ' ' : line.text }}</span>
+          </p>
+        </div>
+        <p v-else-if="diffView && diffView.mode === 'fragment'" class="diff__fragment">
+          <span v-for="(piece, index) in diffView.pieces" :key="index" :class="`is-${piece.kind}`">{{ piece.text }}</span>
+        </p>
+        <p v-else-if="result.raw !== ''" class="card__body">{{ result.raw }}</p>
         <p v-else-if="running" class="typing" aria-live="polite">
           <span /><span /><span />
           正在生成
         </p>
         <p v-if="verdict && !verdict.ok" class="card__block">{{ verdict.message }}</p>
         <div v-if="result.done" class="card__row">
-          <button type="button" class="primary" :disabled="verdict === null || !verdict.ok" @click="accept">采纳</button>
+          <button type="button" class="primary" :disabled="verdict === null || !verdict.ok" @click="accept(false)">采纳</button>
+          <button v-if="verdict && !verdict.ok && verdict.force" type="button" class="pill" @click="accept(true)">仍要采纳</button>
           <button type="button" class="pill" :disabled="running" @click="retry">重试</button>
           <button type="button" class="text" @click="discard">丢弃</button>
         </div>
@@ -467,6 +555,8 @@ function onComposerKeydown(event: KeyboardEvent): void {
         去设置
       </button>
     </p>
+
+    <button v-if="canRevert" type="button" class="revert" @click="revertDoc">回到这次采纳之前</button>
 
     <form class="composer" @submit.prevent="send">
       <textarea
@@ -577,6 +667,55 @@ function onComposerKeydown(event: KeyboardEvent): void {
   font-size: 12px;
   line-height: 1.5;
   color: #b62b2b;
+}
+
+.diff {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.diff__line,
+.diff__fragment {
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.diff__mark {
+  display: inline-block;
+  width: 1.1em;
+  color: #6e6f84;
+  font-variant-numeric: tabular-nums;
+}
+
+.diff__line.is-remove,
+.diff__fragment .is-remove {
+  background: #fde8e8;
+  text-decoration: line-through;
+}
+
+.diff__line.is-add,
+.diff__fragment .is-add {
+  background: #e7f6ea;
+}
+
+.diff__line.is-same,
+.diff__fragment .is-equal {
+  color: #6e6f84;
+}
+
+.revert {
+  align-self: flex-start;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .pills {
