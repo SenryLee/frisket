@@ -1,7 +1,7 @@
 /**
- * 划选改写的六道锁里，能在写回前判定的四道：
- * 长度护栏、位置锁、围栏净化、上下文泄漏。
- * 提示词分栏在 Rust 里组装，写回只走 replaceRange。
+ * 划选改写的四道写回锁：长度、位置、围栏净化、上下文泄漏。
+ * 数字本批不放宽。续写是插入，不走这四道锁，只核对插入点还在，并剥掉重复的前文。
+ * 提示词分栏在 Rust 里组装。
  */
 
 export interface RewriteSnapshot {
@@ -12,7 +12,7 @@ export interface RewriteSnapshot {
   context: string
 }
 
-export type GuardFailure = 'empty' | 'too_long' | 'leak_detected' | 'stale'
+export type GuardFailure = 'empty' | 'too_long' | 'leak_detected' | 'stale' | 'repeat'
 
 export type GuardResult =
   | { ok: true; text: string; before: number; after: number }
@@ -21,6 +21,12 @@ export type GuardResult =
 const RADIUS = 400
 const LEAK_RUN = 20
 
+/** 续写的插入点，以及光标前最多 400 字。后文不送。 */
+export interface ContinuationSnapshot {
+  at: number
+  prefix: string
+}
+
 export function captureSelection(doc: string, from: number, to: number): RewriteSnapshot | null {
   if (from < 0 || to > doc.length || from >= to) return null
   const target = doc.slice(from, to)
@@ -28,6 +34,22 @@ export function captureSelection(doc: string, from: number, to: number): Rewrite
   const before = doc.slice(Math.max(0, from - RADIUS), from)
   const after = doc.slice(to, Math.min(doc.length, to + RADIUS))
   return { from, to, target, context: `${before}${after}` }
+}
+
+/** 没有选区时 at 是光标；有选区时调用方传入选区末尾。 */
+export function captureContinuation(doc: string, at: number): ContinuationSnapshot | null {
+  if (at < 0 || at > doc.length) return null
+  return { at, prefix: doc.slice(Math.max(0, at - RADIUS), at) }
+}
+
+/** 结果若以前文开头，剥掉与光标前这段字重合的前缀。先看整段，再往短里收。 */
+export function stripRepeatedPrefix(text: string, prefix: string): string {
+  if (prefix.length === 0 || text.length === 0) return text
+  const max = Math.min(prefix.length, text.length)
+  for (let size = max; size > 0; size -= 1) {
+    if (text.startsWith(prefix.slice(prefix.length - size))) return text.slice(size)
+  }
+  return text
 }
 
 /** 剥掉包住全文的 markdown 围栏，以及首尾空行。 */
@@ -80,4 +102,21 @@ export function prepareReplacement(snapshot: RewriteSnapshot, raw: string, docNo
     return { ok: false, code: 'leak_detected', message: '结果复述了选区之外的上下文，已拒绝写回' }
   }
   return { ok: true, text, before, after }
+}
+
+/** 续写写回前的检查。不套用替换的长度锁和泄漏锁。 */
+export function prepareContinuation(snapshot: ContinuationSnapshot, raw: string, docNow: string): GuardResult {
+  const start = Math.max(0, snapshot.at - snapshot.prefix.length)
+  if (snapshot.at > docNow.length || docNow.slice(start, snapshot.at) !== snapshot.prefix) {
+    return { ok: false, code: 'stale', message: '文档已变更，请重新续写' }
+  }
+  const cleaned = stripModelFences(raw)
+  if (cleaned.trim() === '') {
+    return { ok: false, code: 'empty', message: '模型没有返回要补上的文字' }
+  }
+  const text = stripRepeatedPrefix(cleaned, snapshot.prefix)
+  if (text.trim() === '') {
+    return { ok: false, code: 'repeat', message: '结果只是在重复前文' }
+  }
+  return { ok: true, text, before: 0, after: countChars(text) }
 }
