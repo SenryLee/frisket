@@ -37,6 +37,19 @@ export function outlineLabel(raw: string): string {
     .trim()
 }
 
+/** 只留标题文字和级别，不带标题下的正文。解析规则仍走 parseOutline。 */
+export function outlineHeadings(markdown: string): { level: number; text: string }[] {
+  const lines: { level: number; text: string }[] = []
+  const visit = (nodes: readonly OutlineNode[]): void => {
+    for (const node of nodes) {
+      lines.push({ level: node.level, text: node.text })
+      visit(node.children)
+    }
+  }
+  visit(parseOutline(markdown))
+  return lines
+}
+
 export function parseOutline(markdown: string): OutlineNode[] {
   const flat: OutlineNode[] = []
   const lines = markdown.split('\n')
