@@ -285,6 +285,11 @@ const inlineTheme = EditorView.theme({
     textDecoration: 'underline',
     textUnderlineOffset: '2px',
   },
+  '.cm-ghost-continue': {
+    color: 'var(--text-muted)',
+    pointerEvents: 'none',
+    whiteSpace: 'pre-wrap',
+  },
 })
 
 /**

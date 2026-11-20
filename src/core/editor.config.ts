@@ -29,6 +29,7 @@ import { closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete'
 import { lintKeymap } from '@codemirror/lint'
 import { slateTheme } from '@/editor/theme'
 import { markdownKeymap } from '@/editor/keys'
+import { ghostContinueExtensions } from '@/editor/ghostContinue'
 import { formatKeymap } from '@/editor/format-keys'
 import { colorField, colorTheme } from '@/editor/live/field.color'
 import { layoutField } from '@/editor/live/field.layout'
@@ -101,6 +102,7 @@ export function baseExtensions(options: BaseExtensionOptions): Extension[] {
     colorField,
     colorTheme,
     statsField,
+    ghostContinueExtensions(),
 
     // ── 编辑基础 ──
     history(),

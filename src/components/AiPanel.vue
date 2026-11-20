@@ -4,7 +4,7 @@
  * 划选走改写：Rust 把上下文和目标拆开，写回前过长度、泄漏和位置锁。
  * 续写插在光标或选区末尾，不替换已有的字。自由对话不写正文。
  */
-import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, defineExpose, inject, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { diffText, type TextDiff } from '@/core/aiDiff'
 import {
   captureContinuation,
@@ -30,6 +30,7 @@ import { CMD, EVENT } from '@/ipc/commands'
 import type { AiErrorCode, TokenUsage } from '@/core/interfaces'
 import { EDITOR_HANDLE, useStore } from '@/store'
 import { isTauriRuntime } from '@/store/appearance'
+import { setGhostBeforeWrite } from '@/editor/ghostContinue'
 
 interface Bubble {
   role: 'user' | 'assistant'
@@ -117,6 +118,11 @@ function onKeyDown(event: KeyboardEvent): void {
 onMounted(() => {
   window.addEventListener('keydown', onKeyDown)
   void refreshRevert()
+  setGhostBeforeWrite(async (doc) => {
+    const saved = await rememberSnapshot(doc, 'continue', 0)
+    if (saved) canRevert.value = isTauriRuntime()
+    return saved
+  })
 })
 
 watch(
@@ -129,6 +135,7 @@ watch(
 )
 
 onBeforeUnmount(() => {
+  setGhostBeforeWrite(null)
   window.removeEventListener('keydown', onKeyDown)
   window.clearTimeout(selectionTimer)
   detach()
@@ -169,6 +176,12 @@ function takeDraft(): string {
   if (text !== '') draft.value = ''
   return text
 }
+
+function runWriting(action: 'rewrite' | 'fixGrammar'): void {
+  run(action, action === 'rewrite' ? '润色' : '纠错')
+}
+
+defineExpose({ runWriting })
 
 function run(action: string, label: string, instruction?: string): void {
   const next = currentSnapshot()
