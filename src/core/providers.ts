@@ -2,6 +2,8 @@
  * 厂商表。协议只有两种：OpenAI 兼容，和 Anthropic Messages。
  * 新增厂商改这里的一行，不新增类。
  */
+import type { TokenUsage } from '@/core/interfaces'
+
 export type ProviderProtocol = 'openai' | 'anthropic'
 
 export interface ProviderOption {
@@ -131,4 +133,45 @@ export const PROVIDERS: readonly ProviderOption[] = [
 
 export function providerById(id: string): ProviderOption {
   return PROVIDERS.find((item) => item.id === id) ?? PROVIDERS[0]!
+}
+
+/**
+ * 每百万 token 的美元标价，只覆盖对得上官方价目的默认模型。
+ * 短上下文、不计算缓存。对不上的厂商只显示 token。
+ * grok-4.7：$2 / $6（xAI，200k 以下）。gpt-4.1：$2 / $8。
+ * gemini-2.0-flash 文本：$0.15 / $0.60。claude-sonnet-4-5：$3 / $15。
+ */
+const DEFAULT_MODEL_USD_PER_MILLION: Record<string, { input: number; output: number }> = {
+  xai: { input: 2, output: 6 },
+  openai: { input: 2, output: 8 },
+  gemini: { input: 0.15, output: 0.6 },
+  anthropic: { input: 3, output: 15 },
+}
+
+/** 当前模型正好是该厂商表里的默认模型时，估一笔美元。Ollama 和对不上的名字返回 null。 */
+export function estimateUsd(providerId: string, model: string, usage: TokenUsage): number | null {
+  const provider = PROVIDERS.find((item) => item.id === providerId)
+  if (provider === undefined || provider.local) return null
+  if (provider.defaultModel === '' || model !== provider.defaultModel) return null
+  const price = DEFAULT_MODEL_USD_PER_MILLION[provider.id]
+  if (price === undefined) return null
+  return (usage.promptTokens * price.input + usage.completionTokens * price.output) / 1_000_000
+}
+
+/** 侧栏底部一行。没有金额时只留 token。 */
+export function formatTokenLine(usage: TokenUsage, providerId: string | null, model: string | null): string {
+  const tokens = `输入 ${usage.promptTokens} · 输出 ${usage.completionTokens}`
+  if (providerId === null || model === null) return tokens
+  const usd = estimateUsd(providerId, model, usage)
+  if (usd === null) return tokens
+  return `${tokens} · 约 ${formatUsd(usd)}`
+}
+
+function formatUsd(amount: number): string {
+  if (!(amount > 0)) return '$0'
+  if (amount < 0.000001) return '< $0.000001'
+  const digits = amount >= 1 ? 2 : amount >= 0.01 ? 4 : 6
+  const fixed = amount.toFixed(digits)
+  const text = amount >= 1 ? fixed : fixed.replace(/0+$/, '').replace(/\.$/, '')
+  return `$${text}`
 }

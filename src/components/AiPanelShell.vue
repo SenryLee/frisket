@@ -17,9 +17,43 @@
  * App.vue 只需在 <AiPanelShell> 里插入 <AIPanel />，
  * 外壳无需任何改动。
  */
+import { computed, ref, watch } from 'vue'
+import type { TokenUsage } from '@/core/interfaces'
+import { CMD } from '@/ipc/commands'
+import { formatTokenLine } from '@/core/providers'
 import { useStore } from '@/store'
+import { isTauriRuntime } from '@/store/appearance'
 
 const store = useStore()
+const priced = ref<string | null>(null)
+let priceTicket = 0
+
+watch(
+  () => store.ai.usage,
+  (usage) => {
+    priced.value = null
+    if (usage === null || !isTauriRuntime()) return
+    const ticket = ++priceTicket
+    void loadPrice(usage, ticket)
+  },
+)
+
+const usageText = computed(() => {
+  const usage = store.ai.usage
+  if (usage === null) return ''
+  return priced.value ?? formatTokenLine(usage, null, null)
+})
+
+async function loadPrice(usage: TokenUsage, ticket: number): Promise<void> {
+  try {
+    const { invoke } = await import('@tauri-apps/api/core')
+    const view = await invoke<{ provider: string; model: string }>(CMD.settingsGet)
+    if (ticket !== priceTicket || store.ai.usage !== usage) return
+    priced.value = formatTokenLine(usage, view.provider, view.model)
+  } catch {
+    // 读不到当前厂商时只留 token，不在侧栏报错。
+  }
+}
 
 function close(): void {
   store.ai.close()
@@ -91,6 +125,8 @@ function close(): void {
         </div>
       </slot>
     </div>
+
+    <p v-if="usageText" class="ai-shell__usage">{{ usageText }}</p>
 
     <!-- 流式进行中显示进度条。放在底部而非顶部：
          对话内容在上方增长，进度条固定在底部更符合「正在输出」的直觉。 -->
@@ -205,6 +241,16 @@ function close(): void {
   line-height: 1.7;
   color: var(--text-muted);
   max-width: 26ch;
+}
+
+.ai-shell__usage {
+  margin: 0;
+  padding: 6px var(--space-5) 8px;
+  font-size: var(--text-xs);
+  line-height: 1.4;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
 }
 
 .ai-shell__progress {

@@ -39,10 +39,6 @@ export const CMD = {
   aiChat: 'ai_chat',
   aiCancel: 'ai_cancel',
   aiListModels: 'ai_list_models',
-  aiHasKey: 'ai_has_key',
-  aiSetKey: 'ai_set_key',
-  aiDeleteKey: 'ai_delete_key',
-  aiProviders: 'ai_providers',
 
   // 外观
   glassProbe: 'glass_probe',
@@ -77,7 +73,7 @@ export const EVENT = {
   docOpen: 'doc:open',
   /** AI 流式增量。载荷是 { requestId, text } */
   aiDelta: 'ai:delta',
-  /** 一轮回复结束，包括用户取消 */
+  /** 一轮回复结束，包括用户取消。正常结束时可带 { promptTokens, completionTokens } */
   aiDone: 'ai:done',
 } as const
 

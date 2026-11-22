@@ -7,7 +7,7 @@
 import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { captureSelection, countChars, prepareReplacement, type GuardResult, type RewriteSnapshot } from '@/core/aiGuard'
 import { CMD, EVENT } from '@/ipc/commands'
-import type { AiErrorCode } from '@/core/interfaces'
+import type { AiErrorCode, TokenUsage } from '@/core/interfaces'
 import { EDITOR_HANDLE, useStore } from '@/store'
 import { isTauriRuntime } from '@/store/appearance'
 
@@ -39,8 +39,6 @@ const verdict = ref<GuardResult | null>(null)
 
 let stopListen: (() => void) | null = null
 let requestId = ''
-let receivedPending = 0
-let receivedTimer = 0
 let selectionTimer = 0
 let shiftSelect = false
 let mode: 'chat' | 'rewrite' = 'chat'
@@ -70,7 +68,6 @@ onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKeyDown)
   window.clearTimeout(selectionTimer)
   detach()
-  flushReceived()
 })
 
 watch(
@@ -181,7 +178,7 @@ async function stream(): Promise<void> {
     }
     return
   }
-  store.ai.startStream(mode === 'rewrite' ? 'rewrite' : null)
+  store.ai.startStream()
   requestId = crypto.randomUUID()
   await scrollDown()
   await attach(requestId)
@@ -207,7 +204,6 @@ async function stream(): Promise<void> {
     fail(raw)
     failed = true
   } finally {
-    flushReceived()
     if (result.value !== null && mode === 'rewrite') {
       result.value = { ...result.value, done: true }
       const handle = editorHandleRef?.value
@@ -235,9 +231,10 @@ async function attach(id: string): Promise<void> {
     if (event.payload.requestId !== id) return
     append(event.payload.text)
   })
-  const unDone = await listen<{ requestId: string }>(EVENT.aiDone, (event) => {
+  const unDone = await listen<{ requestId: string; usage?: Partial<TokenUsage> }>(EVENT.aiDone, (event) => {
     if (event.payload.requestId !== id) return
-    flushReceived()
+    const usage = readUsage(event.payload.usage)
+    if (usage !== null) store.ai.setUsage(usage)
   })
   stopListen = () => {
     unDelta()
@@ -262,24 +259,18 @@ function append(text: string): void {
     next[next.length - 1] = { role: 'assistant', content: last.content + text }
     messages.value = next
   }
-  receivedPending += text.length
-  if (receivedTimer === 0) {
-    receivedTimer = window.setTimeout(() => {
-      flushReceived()
-    }, 200)
-  }
   void scrollDown()
 }
 
-function flushReceived(): void {
-  if (receivedTimer !== 0) {
-    window.clearTimeout(receivedTimer)
-    receivedTimer = 0
-  }
-  if (receivedPending > 0) {
-    store.ai.addReceivedChars(receivedPending)
-    receivedPending = 0
-  }
+/** 输入和输出都到齐才算用量。缺一边、或不是有限数字，就当这轮没有用量。 */
+function readUsage(usage: Partial<TokenUsage> | undefined): TokenUsage | null {
+  if (usage === undefined) return null
+  const prompt = usage.promptTokens
+  const completion = usage.completionTokens
+  if (typeof prompt !== 'number' || typeof completion !== 'number') return null
+  if (!Number.isFinite(prompt) || !Number.isFinite(completion)) return null
+  if (prompt < 0 || completion < 0) return null
+  return { promptTokens: prompt, completionTokens: completion }
 }
 
 function asErrorCode(code: string): AiErrorCode {
