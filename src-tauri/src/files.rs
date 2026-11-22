@@ -4,9 +4,11 @@
 //! 元信息记在应用数据目录的 history.json 里。
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Component, Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Mutex, OnceLock};
 use tauri::{AppHandle, Manager};
 use tauri_plugin_dialog::DialogExt;
 
@@ -399,6 +401,281 @@ fn path_has_parent(path: &Path) -> bool {
         .any(|component| matches!(component, Component::ParentDir))
 }
 
+/// 每篇文档只留最近一次采纳前的正文，外加回退前的那一版，用来再点一次。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SnapshotMeta {
+    pub id: String,
+    pub document_id: String,
+    pub created_at: String,
+    pub reason: String,
+    pub path: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ai_action: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub word_delta: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RevertResult {
+    pub text: String,
+}
+
+#[derive(Default, Serialize, Deserialize)]
+struct SnapshotPair {
+    ai_write: Option<SnapshotBody>,
+    pre_restore: Option<SnapshotBody>,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+struct SnapshotBody {
+    meta: SnapshotMeta,
+    text: String,
+}
+
+enum SnapshotStore {
+    Memory,
+    Disk(PathBuf),
+}
+
+fn snapshot_memory() -> &'static Mutex<HashMap<String, SnapshotPair>> {
+    static MEMORY: OnceLock<Mutex<HashMap<String, SnapshotPair>>> = OnceLock::new();
+    MEMORY.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn snapshot_lock() -> &'static Mutex<()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+}
+
+fn snapshot_key(path: &str, document_id: &str) -> Result<String, String> {
+    let key = if path.trim().is_empty() {
+        document_id.trim()
+    } else {
+        path.trim()
+    };
+    if key.is_empty() {
+        return Err("没有文档可以快照".to_string());
+    }
+    Ok(key.to_string())
+}
+
+fn snapshot_store(app: &AppHandle, path: &str) -> Result<SnapshotStore, String> {
+    if path.trim().is_empty() {
+        return Ok(SnapshotStore::Memory);
+    }
+    let _ = checked_path(path)?;
+    let dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| format!("找不到数据目录：{error}"))?
+        .join("ai-snapshots");
+    fs::create_dir_all(&dir).map_err(|error| format!("无法创建快照目录：{error}"))?;
+    Ok(SnapshotStore::Disk(dir))
+}
+
+fn with_snapshot_pair<T>(
+    store: &SnapshotStore,
+    key: &str,
+    edit: impl FnOnce(&mut SnapshotPair) -> Result<T, String>,
+) -> Result<T, String> {
+    let _guard = snapshot_lock()
+        .lock()
+        .unwrap_or_else(|error| error.into_inner());
+    match store {
+        SnapshotStore::Memory => {
+            let mut memory = snapshot_memory()
+                .lock()
+                .unwrap_or_else(|error| error.into_inner());
+            let pair = memory.entry(key.to_string()).or_default();
+            edit(pair)
+        }
+        SnapshotStore::Disk(dir) => {
+            let mut pair = read_snapshot_pair(dir, key)?;
+            let result = edit(&mut pair)?;
+            write_snapshot_pair(dir, key, &pair)?;
+            Ok(result)
+        }
+    }
+}
+
+fn snapshot_file(dir: &Path, key: &str) -> PathBuf {
+    dir.join(format!("{}.json", snapshot_name(key)))
+}
+
+fn snapshot_name(key: &str) -> String {
+    let mut hash: u64 = 0xcbf29ce484222325;
+    for byte in key.as_bytes() {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    format!("{hash:016x}")
+}
+
+fn read_snapshot_pair(dir: &Path, key: &str) -> Result<SnapshotPair, String> {
+    let file = snapshot_file(dir, key);
+    if !file.exists() {
+        return Ok(SnapshotPair::default());
+    }
+    let raw = fs::read_to_string(&file).map_err(|error| format!("无法读取快照：{error}"))?;
+    serde_json::from_str(&raw).map_err(|error| format!("快照已损坏：{error}"))
+}
+
+fn write_snapshot_pair(dir: &Path, key: &str, pair: &SnapshotPair) -> Result<(), String> {
+    fs::create_dir_all(dir).map_err(|error| format!("无法创建快照目录：{error}"))?;
+    let raw = serde_json::to_string(pair).map_err(|error| error.to_string())?;
+    let file = snapshot_file(dir, key);
+    let temporary = file.with_extension("json.tmp");
+    fs::write(&temporary, raw).map_err(|error| format!("无法写入快照：{error}"))?;
+    fs::rename(&temporary, &file).map_err(|error| format!("无法保存快照：{error}"))?;
+    Ok(())
+}
+
+fn new_snapshot_meta(
+    document_id: &str,
+    path: &str,
+    reason: &str,
+    ai_action: Option<String>,
+    word_delta: Option<i64>,
+) -> SnapshotMeta {
+    static COUNTER: AtomicU64 = AtomicU64::new(1);
+    let id = COUNTER.fetch_add(1, Ordering::Relaxed);
+    SnapshotMeta {
+        id: format!("{id}"),
+        document_id: document_id.to_string(),
+        created_at: iso_utc_now(),
+        reason: reason.to_string(),
+        path: path.to_string(),
+        ai_action,
+        word_delta,
+    }
+}
+
+fn iso_utc_now() -> String {
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_secs())
+        .unwrap_or(0);
+    iso_utc(secs)
+}
+
+fn iso_utc(secs: u64) -> String {
+    let days = (secs / 86_400) as i64;
+    let tod = secs % 86_400;
+    let hour = tod / 3_600;
+    let minute = (tod % 3_600) / 60;
+    let second = tod % 60;
+    let z = days + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = (z - era * 146_097) as u64;
+    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
+    let mut year = yoe as i64 + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let day = doy - (153 * mp + 2) / 5 + 1;
+    let month = if mp < 10 { mp + 3 } else { mp - 9 };
+    if month <= 2 {
+        year += 1;
+    }
+    format!("{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:{second:02}Z")
+}
+
+fn record_ai_write(
+    store: &SnapshotStore,
+    key: &str,
+    document_id: &str,
+    path: &str,
+    text: &str,
+    ai_action: Option<String>,
+    word_delta: Option<i64>,
+) -> Result<SnapshotMeta, String> {
+    with_snapshot_pair(store, key, |pair| {
+        let meta = new_snapshot_meta(document_id, path, "ai-write", ai_action, word_delta);
+        pair.ai_write = Some(SnapshotBody {
+            meta: meta.clone(),
+            text: text.to_string(),
+        });
+        pair.pre_restore = None;
+        Ok(meta)
+    })
+}
+
+fn list_ai_writes(store: &SnapshotStore, key: &str) -> Result<Vec<SnapshotMeta>, String> {
+    with_snapshot_pair(store, key, |pair| {
+        Ok(pair
+            .ai_write
+            .as_ref()
+            .map(|shot| vec![shot.meta.clone()])
+            .unwrap_or_default())
+    })
+}
+
+fn revert_ai_write(store: &SnapshotStore, key: &str, current: &str) -> Result<String, String> {
+    with_snapshot_pair(store, key, |pair| {
+        let Some(ai_write) = pair.ai_write.clone() else {
+            return Err("还没有这次采纳之前的正文".to_string());
+        };
+        if pair.pre_restore.is_some() && current == ai_write.text {
+            return Ok(pair
+                .pre_restore
+                .as_ref()
+                .map(|shot| shot.text.clone())
+                .unwrap_or_default());
+        }
+        let meta = new_snapshot_meta(
+            &ai_write.meta.document_id,
+            &ai_write.meta.path,
+            "pre-restore",
+            None,
+            None,
+        );
+        pair.pre_restore = Some(SnapshotBody {
+            meta,
+            text: current.to_string(),
+        });
+        Ok(ai_write.text)
+    })
+}
+
+#[tauri::command]
+pub fn doc_snapshot(
+    app: AppHandle,
+    path: String,
+    document_id: String,
+    text: String,
+    reason: String,
+    ai_action: Option<String>,
+    word_delta: Option<i64>,
+) -> Result<SnapshotMeta, String> {
+    if reason != "ai-write" {
+        return Err("写回前的快照原因是 ai-write".to_string());
+    }
+    let key = snapshot_key(&path, &document_id)?;
+    let store = snapshot_store(&app, &path)?;
+    let document_id = if document_id.trim().is_empty() {
+        key.clone()
+    } else {
+        document_id
+    };
+    record_ai_write(&store, &key, &document_id, path.trim(), &text, ai_action, word_delta)
+}
+
+#[tauri::command]
+pub fn doc_snapshot_list(app: AppHandle, path: String, document_id: String) -> Result<Vec<SnapshotMeta>, String> {
+    let key = snapshot_key(&path, &document_id)?;
+    let store = snapshot_store(&app, &path)?;
+    list_ai_writes(&store, &key)
+}
+
+#[tauri::command]
+pub fn doc_revert(app: AppHandle, path: String, document_id: String, text: String) -> Result<RevertResult, String> {
+    let key = snapshot_key(&path, &document_id)?;
+    let store = snapshot_store(&app, &path)?;
+    let text = revert_ai_write(&store, &key, &text)?;
+    Ok(RevertResult { text })
+}
+
 fn file_path_string(path: tauri_plugin_dialog::FilePath) -> Option<String> {
     path.into_path().ok().map(|file| file.to_string_lossy().into_owned())
 }
@@ -406,8 +683,9 @@ fn file_path_string(path: tauri_plugin_dialog::FilePath) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        allocate_markdown, checked_path, doc_list_markdown, omit_history_entries, rename_markdown,
-        sanitized_stem, DocumentMeta,
+        allocate_markdown, checked_path, doc_list_markdown, iso_utc, list_ai_writes, omit_history_entries,
+        record_ai_write, rename_markdown, revert_ai_write, sanitized_stem, snapshot_file, DocumentMeta,
+        SnapshotStore,
     };
     use std::fs;
 
@@ -530,6 +808,44 @@ mod tests {
         assert_eq!(left[0].id, "/notes/丙.md");
         assert_eq!(omit_history_entries(&items, &[]).len(), 3);
         assert_eq!(omit_history_entries(&items, &["".into(), "/missing".into()]).len(), 3);
+    }
+
+    #[test]
+    fn iso_epoch_is_utc() {
+        assert_eq!(iso_utc(0), "1970-01-01T00:00:00Z");
+    }
+
+    #[test]
+    fn memory_snapshot_keeps_one_and_revert_toggles() {
+        let store = SnapshotStore::Memory;
+        let key = format!("draft-{}", std::process::id());
+        let first = record_ai_write(&store, &key, &key, "", "采纳前", Some("rewrite".into()), Some(2)).unwrap();
+        assert_eq!(first.reason, "ai-write");
+        let second = record_ai_write(&store, &key, &key, "", "第二次采纳前", None, None).unwrap();
+        let listed = list_ai_writes(&store, &key).unwrap();
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].id, second.id);
+        let current = "采纳后的正文，又手改了一句";
+        let restored = revert_ai_write(&store, &key, current).unwrap();
+        assert_eq!(restored, "第二次采纳前");
+        let back = revert_ai_write(&store, &key, &restored).unwrap();
+        assert_eq!(back, current);
+        assert!(!snapshot_file(&std::env::temp_dir(), &key).exists());
+    }
+
+    #[test]
+    fn disk_snapshot_roundtrip_stays_in_the_data_dir() {
+        let dir = std::env::temp_dir().join(format!("frisket-snap-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        let store = SnapshotStore::Disk(dir.clone());
+        let key = "/tmp/frisket-note.md";
+        record_ai_write(&store, key, key, key, "采纳前全文", Some("shorten".into()), Some(-3)).unwrap();
+        let file = snapshot_file(&dir, key);
+        assert!(file.starts_with(&dir));
+        assert_eq!(list_ai_writes(&store, key).unwrap()[0].path, key);
+        assert_eq!(revert_ai_write(&store, key, "写回后又改过").unwrap(), "采纳前全文");
+        assert_eq!(revert_ai_write(&store, key, "采纳前全文").unwrap(), "写回后又改过");
+        let _ = fs::remove_dir_all(&dir);
     }
 }
 
