@@ -118,13 +118,15 @@ fn http() -> &'static reqwest::Client {
 #[tauri::command]
 pub fn settings_get(app: AppHandle) -> AiSettingsView {
     let settings = read_settings(&app);
+    // 一次查完。分开查两遍的话，钥匙串授权窗会连着弹。
+    let (secret, storage) = stored_key(&app);
     AiSettingsView {
         base_url: settings.base_url,
         model: settings.model,
         provider: settings.provider,
         protocol: settings.protocol,
-        has_key: !read_key(&app).is_empty(),
-        key_storage: key_storage(&app),
+        has_key: !secret.is_empty(),
+        key_storage: storage.to_string(),
     }
 }
 
@@ -772,6 +774,8 @@ fn default_settings() -> AiSettings {
 }
 
 fn keyring_secret(service: &str) -> Option<String> {
+    // 授权窗必须关掉。settings_get 在主线程上同步跑，窗一出来事件循环就停，设置页出不来。
+    let _silent = KeychainPromptGuard::suppress();
     keyring::Entry::new(service, KEYCHAIN_USER)
         .ok()
         .and_then(|entry| entry.get_password().ok())
@@ -779,21 +783,63 @@ fn keyring_secret(service: &str) -> Option<String> {
         .filter(|secret| !secret.is_empty())
 }
 
-fn key_storage(app: &AppHandle) -> String {
-    let in_keyring =
-        keyring_secret(KEYCHAIN_SERVICE).is_some() || keyring_secret(LEGACY_KEYCHAIN_SERVICE).is_some();
-    if in_keyring {
-        return "keyring".to_string();
+/// 打开设置和发对话都走这里。
+/// 探针返回 None 表示没有，或系统本来要弹授权窗。这里不改钥匙串，改的那一下又是一个窗。
+fn resolve_settings_key(
+    mut probe: impl FnMut(&str) -> Option<String>,
+    file: &str,
+) -> (String, &'static str) {
+    for service in [KEYCHAIN_SERVICE, LEGACY_KEYCHAIN_SERVICE] {
+        if let Some(secret) = nonempty(probe(service)) {
+            return (secret, "keyring");
+        }
     }
-    let in_file = key_file(app)
+    if let Some(secret) = nonempty(Some(file.to_string())) {
+        return (secret, "file");
+    }
+    (String::new(), "none")
+}
+
+fn nonempty(secret: Option<String>) -> Option<String> {
+    secret.map(|value| value.trim().to_string()).filter(|value| !value.is_empty())
+}
+
+fn stored_key(app: &AppHandle) -> (String, &'static str) {
+    resolve_settings_key(keyring_secret, &file_secret(app))
+}
+
+fn file_secret(app: &AppHandle) -> String {
+    key_file(app)
         .ok()
         .and_then(|file| fs::read_to_string(file).ok())
-        .is_some_and(|secret| !secret.trim().is_empty());
-    if in_file {
-        "file".to_string()
-    } else {
-        "none".to_string()
+        .unwrap_or_default()
+}
+
+struct KeychainPromptGuard;
+
+impl KeychainPromptGuard {
+    fn suppress() -> Self {
+        #[cfg(target_os = "macos")]
+        unsafe {
+            SecKeychainSetUserInteractionAllowed(0);
+        }
+        Self
     }
+}
+
+impl Drop for KeychainPromptGuard {
+    fn drop(&mut self) {
+        #[cfg(target_os = "macos")]
+        unsafe {
+            SecKeychainSetUserInteractionAllowed(1);
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
+#[link(name = "Security", kind = "framework")]
+extern "C" {
+    fn SecKeychainSetUserInteractionAllowed(allowed: u8) -> i32;
 }
 
 #[tauri::command]
@@ -861,21 +907,7 @@ fn data_dir(app: &AppHandle) -> Result<PathBuf, String> {
 }
 
 fn read_key(app: &AppHandle) -> String {
-    if let Some(secret) = keyring_secret(KEYCHAIN_SERVICE) {
-        return secret;
-    }
-    if let Some(secret) = keyring_secret(LEGACY_KEYCHAIN_SERVICE) {
-        if let Ok(entry) = keyring::Entry::new(KEYCHAIN_SERVICE, KEYCHAIN_USER) {
-            let _ = entry.set_password(&secret);
-        }
-        return secret;
-    }
-    key_file(app)
-        .ok()
-        .and_then(|file| fs::read_to_string(file).ok())
-        .map(|secret| secret.trim().to_string())
-        .filter(|secret| !secret.is_empty())
-        .unwrap_or_default()
+    stored_key(app).0
 }
 
 fn write_key(app: &AppHandle, key: &str) -> Result<(), String> {
@@ -914,11 +946,57 @@ fn delete_key(app: &AppHandle) -> Result<(), String> {
 mod tests {
     use super::{
         anthropic_payload, completions_url, drain_sse, finished_usage, messages_url, normalize_base,
-        normalize_model, normalize_protocol, openai_payload, prepare_turns, rewrite_user, stream_signal,
-        ChatTurn, RewriteRequest, Signal, UsageAcc, CHAT_SYSTEM, CONTINUE_SYSTEM, MAX_TOKENS,
-        REWRITE_SYSTEM, TEMPERATURE,
+        normalize_model, normalize_protocol, openai_payload, prepare_turns, resolve_settings_key,
+        rewrite_user, stream_signal, ChatTurn, RewriteRequest, Signal, UsageAcc, CHAT_SYSTEM,
+        CONTINUE_SYSTEM, KEYCHAIN_SERVICE, LEGACY_KEYCHAIN_SERVICE, MAX_TOKENS, REWRITE_SYSTEM,
+        TEMPERATURE,
     };
     use serde_json::json;
+
+    #[test]
+    fn opening_settings_does_not_keep_asking_the_keychain() {
+        let mut asked = Vec::new();
+        let (secret, storage) = resolve_settings_key(
+            |service| {
+                asked.push(service.to_string());
+                // 系统本来要弹授权窗。静默探针把它当成没有，不能再问一次。
+                None
+            },
+            "sk-file",
+        );
+        assert_eq!(
+            asked,
+            vec![KEYCHAIN_SERVICE.to_string(), LEGACY_KEYCHAIN_SERVICE.to_string()]
+        );
+        assert_eq!(storage, "file");
+        assert_eq!(secret, "sk-file");
+    }
+
+    #[test]
+    fn opening_settings_stops_after_the_current_keychain_entry() {
+        let mut asked = Vec::new();
+        let (secret, storage) = resolve_settings_key(
+            |service| {
+                asked.push(service.to_string());
+                if service == KEYCHAIN_SERVICE {
+                    Some("  current-key  ".to_string())
+                } else {
+                    Some("legacy-key".to_string())
+                }
+            },
+            "file-key",
+        );
+        assert_eq!(asked, vec![KEYCHAIN_SERVICE.to_string()]);
+        assert_eq!(storage, "keyring");
+        assert_eq!(secret, "current-key");
+    }
+
+    #[test]
+    fn opening_settings_with_no_saved_key_reports_none() {
+        let (secret, storage) = resolve_settings_key(|_| None, " \n");
+        assert_eq!(storage, "none");
+        assert_eq!(secret, "");
+    }
 
     #[test]
     fn completions_url_appends_once() {
