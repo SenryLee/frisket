@@ -55,6 +55,11 @@ const store = useStore()
  * 内核就能专注于 CM6 的实现，不必关心自己在三栏里的位置。
  */
 const editorHost = ref<HTMLDivElement | null>(null)
+const aiPanel = ref<{ runWriting: (action: 'rewrite' | 'fixGrammar') => void } | null>(null)
+
+function runWriting(action: 'rewrite' | 'fixGrammar'): void {
+  aiPanel.value?.runWriting(action)
+}
 
 /**
  * 内核提供的编辑能力。M0 阶段为 null —— 内核尚未接入。
@@ -162,8 +167,8 @@ function handleGlobalKeydown(event: KeyboardEvent): void {
     return
   }
 
-  // ⌘J 开合 AI 面板。用 preventDefault 避免与输入法候选窗冲突
-  if (metaKey && key === 'j') {
+  // ⌘J 开合 AI 面板。⌥⌘J 留给灰色续写，这里不接。
+  if (metaKey && key === 'j' && !event.altKey) {
     event.preventDefault()
     store.ai.toggle()
     return
@@ -316,14 +321,14 @@ onBeforeUnmount(() => {
 
         <!-- 编辑区容器。glass-l2：88% 不透明，可读性优先 -->
         <div class="app__editor glass-l2" ref="editorHost" />
-        <FollowingBar @action="handleToolbarAction" />
+        <FollowingBar @action="handleToolbarAction" @writing="runWriting" />
 
         <StatusBar />
       </main>
 
       <!-- 右栏 -->
       <AiPanelShell>
-        <AiPanel @open-settings="settingsOpen = true" />
+        <AiPanel ref="aiPanel" @open-settings="settingsOpen = true" />
       </AiPanelShell>
       <OutlineDrawer />
     </div>
